@@ -67,13 +67,20 @@ def test_recommendations_are_ordered():
 def test_explanation_contains_breakdown():
     heroes = load_data()[0]
     explanation = format_explanation(recommend(parse_draft(DRAFT))[0], heroes)
-    assert "base rating: +62.0" in explanation
-    assert "role suitability: +10.0" in explanation
-    assert "matchup vs Spirit Breaker: +6.0" in explanation
-    assert "synergy with Underlord: +5.0" in explanation
+    assert "base: +62.0" in explanation
+    assert "role: +10.0" in explanation
+    assert "vs Spirit Breaker: +6.0" in explanation
+    assert "with Underlord: +5.0" in explanation
 
 
 def test_explanation_describes_negative_matchup_value():
     heroes = load_data()[0]
     anti_mage = next(item for item in recommend(parse_draft(DRAFT), limit=20) if item.hero.id == "anti_mage")
-    assert "matchup vs Silencer: -5.0" in format_explanation(anti_mage, heroes)
+    assert "vs Silencer: -5.0" in format_explanation(anti_mage, heroes)
+
+
+def test_breakdown_total_is_exact_scoring_formula():
+    item = recommend(parse_draft(DRAFT))[0]
+    breakdown = item.breakdown
+    assert breakdown.total == breakdown.base + breakdown.role + sum(value for _, value in breakdown.matchup_contributions) + sum(value for _, value in breakdown.synergy_contributions)
+    assert item.score == breakdown.total

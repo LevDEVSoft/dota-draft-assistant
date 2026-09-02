@@ -14,14 +14,15 @@ def _display(hero_id: str, heroes: dict) -> str:
 
 def format_explanation(item, heroes: dict) -> str:
     lines = [f"{item.hero.display_name} {item.score:.1f}", ""]
-    lines.append(f"- base rating: {item.hero.base_rating:+.1f}")
-    lines.append(f"- role suitability: {item.role_score:+.1f}")
-    for enemy, score in item.matchup_details:
+    lines.append(f"  base: {item.breakdown.base:+.1f}")
+    lines.append(f"  role: {item.breakdown.role:+.1f}")
+    for enemy, score in item.breakdown.matchup_contributions:
         if score:
-            lines.append(f"- matchup vs {_display(enemy, heroes)}: {score:+.1f}")
-    for ally, score in item.synergy_details:
+            lines.append(f"  vs {_display(enemy, heroes)}: {score:+.1f}")
+    for ally, score in item.breakdown.synergy_contributions:
         if score:
-            lines.append(f"- synergy with {_display(ally, heroes)}: {score:+.1f}")
+            lines.append(f"  with {_display(ally, heroes)}: {score:+.1f}")
+    lines.append(f"  total: {item.breakdown.total:.1f}")
     return "\n".join(lines)
 
 
@@ -33,11 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--validate-data", action="store_true", help="validate local data files")
     args = parser.parse_args(argv)
     try:
-        heroes, _, _ = load_data()
+        heroes, matchups, synergies = load_data()
         aliases = build_aliases(heroes)
         validate_aliases(aliases, set(heroes))
         if args.validate_data:
-            print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}")
+            print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}\nMatchups: {sum(len(values) for values in matchups.values())}\nSynergies: {len(synergies)}")
             return 0
         if not args.draft or args.top < 1:
             parser.error("Provide a draft and a positive --top value")

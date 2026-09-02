@@ -16,6 +16,8 @@ py -3.12 -m pytest
 ```powershell
 dota-pick "sf bara ogre silencer | underlord jakiro wd | carry"
 dota-pick "sf bara ogre silencer | underlord jakiro wd | carry" --explain
+dota-pick "sf bara ogre | jakiro wd | carry" --top 5
+dota-pick --validate-data
 ```
 
 Example output:
@@ -33,10 +35,10 @@ Input uses `enemy heroes | allied heroes | role`. Hero names and aliases are cas
 Each legal candidate receives:
 
 ```text
-base_rating + sum(matchup scores versus enemies) + sum(synergy scores with allies) + role suitability
+base + role suitability + matchup contributions + synergy contributions
 ```
 
-All values, including role suitability, live in JSON, making them easy to inspect and tune. Scores are arbitrary ranking points, not percentages and not normalized to 0–100. Current values are manually seeded MVP data, not statistically validated game data.
+Scores are arbitrary ranking points, not percentages, normalized values, or win probabilities. Positive matchups favor the candidate against that enemy; negative ones penalize it. Synergies are stored once per unordered pair and always apply equally in either direction. Current values are manually seeded MVP data, not statistically validated game data.
 
 ## Project structure
 

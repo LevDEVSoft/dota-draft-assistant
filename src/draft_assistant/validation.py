@@ -37,6 +37,18 @@ def validate_directed_scores(data: dict, hero_ids: set[str], label: str, limit: 
                 raise ValueError(f"Invalid {label} entry: {source} -> {target}")
 
 
+def validate_synergies(entries: list[dict], hero_ids: set[str]) -> None:
+    pairs = set()
+    for entry in entries:
+        heroes, score = entry.get("heroes"), entry.get("score")
+        if not isinstance(heroes, list) or len(heroes) != 2 or heroes[0] == heroes[1] or not set(heroes) <= hero_ids:
+            raise ValueError("Invalid synergy entry")
+        pair = tuple(sorted(heroes))
+        if pair in pairs or not isinstance(score, Real) or isinstance(score, bool) or abs(score) > SYNERGY_LIMIT:
+            raise ValueError("Invalid synergy entry")
+        pairs.add(pair)
+
+
 def validate_aliases(aliases: dict[str, str], hero_ids: set[str]) -> None:
     for alias, hero_id in aliases.items():
         if not alias or hero_id not in hero_ids:

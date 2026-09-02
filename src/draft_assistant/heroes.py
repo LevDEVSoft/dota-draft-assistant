@@ -10,10 +10,10 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 ROLES = {"carry", "mid", "offlane", "support", "hard_support"}
 
 
-def load_data() -> tuple[dict[str, Hero], dict[str, dict[str, float]], dict[str, dict[str, float]]]:
+def load_data() -> tuple[dict[str, Hero], dict[str, dict[str, float]], dict[tuple[str, str], float]]:
     with (DATA_DIR / "heroes.json").open(encoding="utf-8") as file:
         hero_data = json.load(file)
-    from .validation import validate_directed_scores, validate_heroes
+    from .validation import validate_directed_scores, validate_heroes, validate_synergies
     validate_heroes(hero_data)
     heroes = {
         item["id"]: Hero(
@@ -30,8 +30,9 @@ def load_data() -> tuple[dict[str, Hero], dict[str, dict[str, float]], dict[str,
     with (DATA_DIR / "synergies.json").open(encoding="utf-8") as file:
         synergies = json.load(file)
     validate_directed_scores(matchups, set(heroes), "matchup", 20)
-    validate_directed_scores(synergies, set(heroes), "synergy", 20)
-    return heroes, matchups, synergies
+    validate_synergies(synergies, set(heroes))
+    synergy_map = {tuple(sorted(entry["heroes"])): entry["score"] for entry in synergies}
+    return heroes, matchups, synergy_map
 
 
 def parse_draft(value: str, heroes: dict[str, Hero] | None = None) -> Draft:

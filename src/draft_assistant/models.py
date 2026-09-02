@@ -20,11 +20,30 @@ class Draft:
 
 
 @dataclass(frozen=True)
+class ScoreBreakdown:
+    base: float
+    role: float
+    matchup_contributions: tuple[tuple[str, float], ...]
+    synergy_contributions: tuple[tuple[str, float], ...]
+
+    @property
+    def matchups(self) -> float:
+        return sum(score for _, score in self.matchup_contributions)
+
+    @property
+    def synergies(self) -> float:
+        return sum(score for _, score in self.synergy_contributions)
+
+    @property
+    def total(self) -> float:
+        return self.base + self.role + self.matchups + self.synergies
+
+
+@dataclass(frozen=True)
 class Recommendation:
     hero: Hero
-    score: float
-    matchup_score: float
-    synergy_score: float
-    role_score: float
-    matchup_details: tuple[tuple[str, float], ...]
-    synergy_details: tuple[tuple[str, float], ...]
+    breakdown: ScoreBreakdown
+
+    @property
+    def score(self) -> float:
+        return self.breakdown.total

@@ -1,11 +1,11 @@
-{
-  "lifestealer":{"underlord":5,"jakiro":1,"witch_doctor":0},
-  "juggernaut":{"underlord":2,"jakiro":2,"witch_doctor":1},
-  "wraith_king":{"underlord":1,"jakiro":1,"witch_doctor":0},
-  "anti_mage":{"underlord":1,"jakiro":0,"witch_doctor":1},
-  "spectre":{"underlord":1,"jakiro":1,"witch_doctor":1},
-  "phantom_assassin":{"underlord":1,"jakiro":1,"witch_doctor":1},
-  "medusa":{"underlord":2,"jakiro":1,"witch_doctor":0},
-  "chaos_knight":{"underlord":2,"jakiro":1,"witch_doctor":1},
-  "terrorblade":{"underlord":1,"jakiro":1,"witch_doctor":0}
-}
+[
+  {"heroes":["lifestealer","underlord"],"score":5}, {"heroes":["lifestealer","jakiro"],"score":1},
+  {"heroes":["juggernaut","underlord"],"score":2}, {"heroes":["juggernaut","jakiro"],"score":2}, {"heroes":["juggernaut","witch_doctor"],"score":1},
+  {"heroes":["wraith_king","underlord"],"score":1}, {"heroes":["wraith_king","jakiro"],"score":1},
+  {"heroes":["anti_mage","underlord"],"score":1}, {"heroes":["anti_mage","witch_doctor"],"score":1},
+  {"heroes":["spectre","underlord"],"score":1}, {"heroes":["spectre","jakiro"],"score":1}, {"heroes":["spectre","witch_doctor"],"score":1},
+  {"heroes":["phantom_assassin","underlord"],"score":1}, {"heroes":["phantom_assassin","jakiro"],"score":1}, {"heroes":["phantom_assassin","witch_doctor"],"score":1},
+  {"heroes":["medusa","underlord"],"score":2}, {"heroes":["medusa","jakiro"],"score":1},
+  {"heroes":["chaos_knight","underlord"],"score":2}, {"heroes":["chaos_knight","jakiro"],"score":1}, {"heroes":["chaos_knight","witch_doctor"],"score":1},
+  {"heroes":["terrorblade","underlord"],"score":1}, {"heroes":["terrorblade","jakiro"],"score":1}
+]
