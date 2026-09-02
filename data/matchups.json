@@ -1,0 +1,11 @@
+{
+  "lifestealer":{"spirit_breaker":6,"ogre_magi":5,"silencer":3,"shadow_fiend":1},
+  "juggernaut":{"spirit_breaker":4,"ogre_magi":3,"silencer":2,"shadow_fiend":2},
+  "wraith_king":{"spirit_breaker":3,"ogre_magi":2,"silencer":1,"shadow_fiend":2},
+  "anti_mage":{"spirit_breaker":1,"ogre_magi":2,"silencer":-5,"shadow_fiend":1},
+  "spectre":{"spirit_breaker":2,"ogre_magi":1,"silencer":0,"shadow_fiend":1},
+  "phantom_assassin":{"spirit_breaker":2,"ogre_magi":1,"silencer":-2,"shadow_fiend":3},
+  "medusa":{"spirit_breaker":2,"ogre_magi":1,"silencer":-4,"shadow_fiend":1},
+  "chaos_knight":{"spirit_breaker":2,"ogre_magi":2,"silencer":-1,"shadow_fiend":1},
+  "terrorblade":{"spirit_breaker":1,"ogre_magi":1,"silencer":-2,"shadow_fiend":2}
+}

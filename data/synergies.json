@@ -1,0 +1,11 @@
+{
+  "lifestealer":{"underlord":5,"jakiro":1,"witch_doctor":0},
+  "juggernaut":{"underlord":2,"jakiro":2,"witch_doctor":1},
+  "wraith_king":{"underlord":1,"jakiro":1,"witch_doctor":0},
+  "anti_mage":{"underlord":1,"jakiro":0,"witch_doctor":1},
+  "spectre":{"underlord":1,"jakiro":1,"witch_doctor":1},
+  "phantom_assassin":{"underlord":1,"jakiro":1,"witch_doctor":1},
+  "medusa":{"underlord":2,"jakiro":1,"witch_doctor":0},
+  "chaos_knight":{"underlord":2,"jakiro":1,"witch_doctor":1},
+  "terrorblade":{"underlord":1,"jakiro":1,"witch_doctor":0}
+}

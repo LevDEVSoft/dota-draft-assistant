@@ -1,0 +1,20 @@
+[
+  {"id":"lifestealer","display_name":"Lifestealer","roles":["carry"],"base_rating":62,"role_scores":{"carry":10}},
+  {"id":"juggernaut","display_name":"Juggernaut","roles":["carry"],"base_rating":60,"role_scores":{"carry":10}},
+  {"id":"wraith_king","display_name":"Wraith King","roles":["carry"],"base_rating":58,"role_scores":{"carry":10}},
+  {"id":"anti_mage","display_name":"Anti-Mage","roles":["carry"],"base_rating":55,"role_scores":{"carry":10}},
+  {"id":"spectre","display_name":"Spectre","roles":["carry"],"base_rating":54,"role_scores":{"carry":10}},
+  {"id":"shadow_fiend","display_name":"Shadow Fiend","roles":["mid","carry"],"base_rating":57,"role_scores":{"mid":10,"carry":10}},
+  {"id":"spirit_breaker","display_name":"Spirit Breaker","roles":["support","offlane"],"base_rating":51,"role_scores":{"support":10,"offlane":10}},
+  {"id":"ogre_magi","display_name":"Ogre Magi","roles":["support","hard_support"],"base_rating":52,"role_scores":{"support":10,"hard_support":10}},
+  {"id":"silencer","display_name":"Silencer","roles":["support","hard_support","mid"],"base_rating":53,"role_scores":{"support":10,"hard_support":10,"mid":10}},
+  {"id":"underlord","display_name":"Underlord","roles":["offlane"],"base_rating":54,"role_scores":{"offlane":10}},
+  {"id":"jakiro","display_name":"Jakiro","roles":["support","hard_support"],"base_rating":53,"role_scores":{"support":10,"hard_support":10}},
+  {"id":"witch_doctor","display_name":"Witch Doctor","roles":["support","hard_support"],"base_rating":51,"role_scores":{"support":10,"hard_support":10}},
+  {"id":"phantom_assassin","display_name":"Phantom Assassin","roles":["carry"],"base_rating":56,"role_scores":{"carry":10}},
+  {"id":"medusa","display_name":"Medusa","roles":["carry","mid"],"base_rating":57,"role_scores":{"carry":10,"mid":10}},
+  {"id":"chaos_knight","display_name":"Chaos Knight","roles":["carry","offlane"],"base_rating":55,"role_scores":{"carry":10,"offlane":10}},
+  {"id":"terrorblade","display_name":"Terrorblade","roles":["carry"],"base_rating":56,"role_scores":{"carry":10}},
+  {"id":"queen_of_pain","display_name":"Queen of Pain","roles":["mid"],"base_rating":55,"role_scores":{"mid":10}},
+  {"id":"mirana","display_name":"Mirana","roles":["support","hard_support"],"base_rating":52,"role_scores":{"support":10,"hard_support":10}}
+]
