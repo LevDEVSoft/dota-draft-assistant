@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--top", type=int, default=3, help="number of picks to show")
     parser.add_argument("--validate-data", action="store_true", help="validate local data files")
     parser.add_argument("--sync-stats", action="store_true", help="fetch a local STRATZ snapshot")
-    parser.add_argument("--stats-role", choices=("carry", "mid", "offlane", "support", "hard_support"), help="limit STRATZ meta statistics to one role")
+    parser.add_argument("--stats-role", choices=("carry", "mid", "offlane", "support", "hard_support"), default="carry", help="role-specific STRATZ statistics (default: carry)")
     args = parser.parse_args(argv)
     try:
         heroes, matchups, synergies = load_data()
@@ -44,9 +44,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}\nMatchups: {sum(len(values) for values in matchups.values())}\nSynergies: {len(synergies)}")
             return 0
         if args.sync_stats:
-            from .data_sources.stratz import sync
+            from .data_sources.stratz import build_sync_plan, sync
             from .heroes import DATA_DIR
-            snapshot = sync(args.stats_role, DATA_DIR / "generated" / "snapshot.json", set(heroes), DATA_DIR / "hero_id_map.json")
+            plan = build_sync_plan(args.stats_role, heroes, DATA_DIR / "hero_id_map.json")
+            print(f"Sync plan:\nRole: {plan.role}\nMeta requests: {plan.meta_requests}\nPair candidates: {len(plan.pair_hero_ids)}\nExpected API requests: {plan.expected_requests}")
+            snapshot = sync(args.stats_role, DATA_DIR / "generated" / "snapshot.json", heroes, DATA_DIR / "hero_id_map.json")
             print(f"Snapshot written: data/generated/snapshot.json\nHeroes: {len(snapshot['meta'])}\nMatchups: {len(snapshot['matchups'])}\nSynergies: {len(snapshot['synergies'])}")
             return 0
         if not args.draft or args.top < 1:

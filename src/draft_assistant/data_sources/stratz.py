@@ -1,9 +1,12 @@
-"""Isolated STRATZ GraphQL adapter; never imported by runtime scoring."""
+"""Isolated, rate-limit-aware STRATZ GraphQL adapter."""
 
 import json
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from time import sleep
+from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -12,12 +15,42 @@ from .mapping import load_mapping, validate_mapping
 
 ENDPOINT = "https://api.stratz.com/graphql"
 ROLE_POSITIONS = {"carry": "POSITION_1", "mid": "POSITION_2", "offlane": "POSITION_3", "support": "POSITION_4", "hard_support": "POSITION_5"}
-POSITION_ROLES = {position: role for role, position in ROLE_POSITIONS.items()}
 DEFAULT_BRACKET = "HERALD_GUARDIAN"
+DEFAULT_PAIR_DELAY_SECONDS = 0.30
 
 
 class StratzError(RuntimeError):
     pass
+
+
+class StratzRateLimitError(StratzError):
+    """A terminal 429 response, with optional safe server pacing metadata."""
+
+    def __init__(self, retry_after: int | None = None, remaining: int | None = None, reset: int | None = None):
+        self.retry_after, self.remaining, self.reset = retry_after, remaining, reset
+        details = []
+        if retry_after is not None:
+            details.append(f"retry_after={retry_after}s")
+        if remaining is not None:
+            details.append(f"remaining={remaining}")
+        if reset is not None:
+            details.append(f"reset={reset}")
+        suffix = f" ({', '.join(details)})" if details else ""
+        super().__init__(f"STRATZ HTTP error: 429: API rate limit exceeded{suffix}")
+
+
+@dataclass(frozen=True)
+class SyncPlan:
+    role: str
+    pair_hero_ids: tuple[int, ...]
+
+    @property
+    def meta_requests(self) -> int:
+        return 1
+
+    @property
+    def expected_requests(self) -> int:
+        return self.meta_requests + len(self.pair_hero_ids)
 
 
 def token() -> str:
@@ -27,6 +60,16 @@ def token() -> str:
     return value
 
 
+def _header_int(headers, *names: str) -> int | None:
+    for name in names:
+        value = headers.get(name) if headers else None
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def execute(query: str, variables: dict | None = None, timeout: int = 30) -> dict:
     payload = json.dumps({"query": query, "variables": variables or {}}).encode()
     request = Request(ENDPOINT, data=payload, headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json", "User-Agent": "STRATZ_API"}, method="POST")
@@ -34,6 +77,12 @@ def execute(query: str, variables: dict | None = None, timeout: int = 30) -> dic
         with urlopen(request, timeout=timeout) as response:
             body = json.load(response)
     except HTTPError as error:
+        if error.code == 429:
+            raise StratzRateLimitError(
+                _header_int(error.headers, "Retry-After"),
+                _header_int(error.headers, "X-RateLimit-Remaining", "RateLimit-Remaining"),
+                _header_int(error.headers, "X-RateLimit-Reset", "RateLimit-Reset"),
+            ) from error
         detail = error.read().decode("utf-8", "replace")[:1000]
         raise StratzError(f"STRATZ HTTP error: {error.code}: {detail}") from error
     except (URLError, OSError, json.JSONDecodeError) as error:
@@ -49,16 +98,24 @@ META_QUERY = """query Meta($ids:[Short!],$brackets:[RankBracketBasicEnum!],$posi
 PAIR_QUERY = """query Pair($id:Short!,$brackets:[RankBracketBasicEnum!]) { heroStats { matchUp(heroId:$id, bracketBasicIds:$brackets) { heroId with { heroId1 heroId2 matchCount winCount } vs { heroId1 heroId2 matchCount winCount } } } }"""
 
 
-def fetch_meta(hero_ids: list[int], role: str | None = None, bracket: str = DEFAULT_BRACKET) -> list[dict]:
-    if role is not None and role not in ROLE_POSITIONS:
+def fetch_meta(hero_ids: list[int], role: str, bracket: str = DEFAULT_BRACKET) -> list[dict]:
+    if role not in ROLE_POSITIONS:
         raise StratzError(f"Unknown role: {role}")
-    positions = [ROLE_POSITIONS[role]] if role else list(ROLE_POSITIONS.values())
-    return execute(META_QUERY, {"ids": hero_ids, "brackets": [bracket], "positions": positions})["heroStats"]["stats"]
+    return execute(META_QUERY, {"ids": hero_ids, "brackets": [bracket], "positions": [ROLE_POSITIONS[role]]})["heroStats"]["stats"]
 
 
 def fetch_pairs(hero_id: int, bracket: str = DEFAULT_BRACKET) -> dict:
     rows = execute(PAIR_QUERY, {"id": hero_id, "brackets": [bracket]})["heroStats"]["matchUp"]
     return rows[0] if rows else {"with": [], "vs": []}
+
+
+def build_sync_plan(role: str, heroes: dict, mapping_path: Path) -> SyncPlan:
+    if role not in ROLE_POSITIONS:
+        raise StratzError(f"Unknown role: {role}")
+    mapping = load_mapping(mapping_path)
+    validate_mapping(mapping, set(heroes))
+    allowed = {hero_id for hero_id, hero in heroes.items() if role in hero.roles}
+    return SyncPlan(role, tuple(sorted(external_id for external_id, hero_id in mapping.items() if hero_id in allowed)))
 
 
 def _other_hero(row: dict, source_id: int) -> int | None:
@@ -70,29 +127,22 @@ def _other_hero(row: dict, source_id: int) -> int | None:
 
 
 def _source_wins(row: dict, source_id: int) -> int:
-    """`vs.winCount` is wins for heroId1; flip it when querying heroId2."""
     return row["winCount"] if row["heroId1"] == source_id else row["matchCount"] - row["winCount"]
 
 
-def sync(role: str | None, output: Path, canonical_heroes: set[str], mapping_path: Path, bracket: str = DEFAULT_BRACKET) -> dict:
-    """Fetch every mapped hero and persist one normalized, scored local snapshot."""
+def sync(role: str, output: Path, heroes: dict, mapping_path: Path, bracket: str = DEFAULT_BRACKET, pair_delay: float = DEFAULT_PAIR_DELAY_SECONDS, sleeper: Callable[[float], None] = sleep) -> dict:
+    """Fetch one role-specific snapshot, pacing pair requests below STRATZ limits."""
+    plan = build_sync_plan(role, heroes, mapping_path)
     mapping = load_mapping(mapping_path)
-    validate_mapping(mapping, canonical_heroes)
-    ids = sorted(mapping)
+    canonical_heroes = set(heroes)
     raw = {"metadata": {"provider": "stratz", "generated_at": datetime.now(UTC).isoformat(), "bracket": bracket, "role": role}, "meta": [], "matchups": [], "synergies": []}
-    meta_by_hero: dict[int, dict] = {}
-    for row in fetch_meta(ids, role, bracket):
+    for row in fetch_meta(list(plan.pair_hero_ids), role, bracket):
         if row.get("heroId") in mapping:
-            hero_id = row["heroId"]
-            if role is not None:
-                raw["meta"].append({"hero_id": hero_id, "role": role, "matches": row["matchCount"], "wins": row["winCount"]})
-            else:
-                aggregate = meta_by_hero.setdefault(hero_id, {"hero_id": hero_id, "role": None, "matches": 0, "wins": 0})
-                aggregate["matches"] += row["matchCount"]
-                aggregate["wins"] += row["winCount"]
-    raw["meta"].extend(meta_by_hero.values())
+            raw["meta"].append({"hero_id": row["heroId"], "role": role, "matches": row["matchCount"], "wins": row["winCount"]})
     seen_synergies = set()
-    for source_id in ids:
+    for index, source_id in enumerate(plan.pair_hero_ids):
+        if index and pair_delay > 0:
+            sleeper(pair_delay)
         pairs = fetch_pairs(source_id, bracket)
         for row in pairs.get("vs") or []:
             target_id = _other_hero(row, source_id)
