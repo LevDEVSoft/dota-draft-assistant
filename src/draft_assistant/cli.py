@@ -3,6 +3,7 @@
 import argparse
 
 from .aliases import build_aliases
+from .data_sources.stratz import StratzError
 from .heroes import load_data, parse_draft
 from .validation import validate_aliases
 from .scoring import recommend
@@ -32,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--explain", action="store_true", help="show score reasons")
     parser.add_argument("--top", type=int, default=3, help="number of picks to show")
     parser.add_argument("--validate-data", action="store_true", help="validate local data files")
+    parser.add_argument("--sync-stats", action="store_true", help="fetch a local STRATZ snapshot")
+    parser.add_argument("--stats-role", choices=("carry", "mid", "offlane", "support", "hard_support"), help="limit STRATZ meta statistics to one role")
     args = parser.parse_args(argv)
     try:
         heroes, matchups, synergies = load_data()
@@ -40,10 +43,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.validate_data:
             print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}\nMatchups: {sum(len(values) for values in matchups.values())}\nSynergies: {len(synergies)}")
             return 0
+        if args.sync_stats:
+            from .data_sources.stratz import sync
+            from .heroes import DATA_DIR
+            snapshot = sync(args.stats_role, DATA_DIR / "generated" / "snapshot.json", set(heroes), DATA_DIR / "hero_id_map.json")
+            print(f"Snapshot written: data/generated/snapshot.json\nHeroes: {len(snapshot['meta'])}\nMatchups: {len(snapshot['matchups'])}\nSynergies: {len(snapshot['synergies'])}")
+            return 0
         if not args.draft or args.top < 1:
             parser.error("Provide a draft and a positive --top value")
         choices = recommend(parse_draft(args.draft, heroes), args.top)
-    except ValueError as error:
+    except (StratzError, ValueError) as error:
         parser.error(str(error))
     if not choices:
         parser.error("No heroes available for this role")

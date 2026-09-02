@@ -15,9 +15,8 @@ def _rate(record: dict) -> float:
     return wins / matches
 
 
-def import_snapshot(raw_path: Path, output_dir: Path, mapping_path: Path, hero_ids: set[str]) -> dict:
-    raw = json.loads(raw_path.read_text(encoding="utf-8"))
-    mapping = load_mapping(mapping_path)
+def normalize_snapshot(raw: dict, mapping: dict[int, str], hero_ids: set[str]) -> dict:
+    """Convert provider-neutral numeric records into the local scored snapshot."""
     validate_mapping(mapping, hero_ids)
     def hero(external_id: int) -> str:
         try:
@@ -44,7 +43,12 @@ def import_snapshot(raw_path: Path, output_dir: Path, mapping_path: Path, hero_i
         seen.add(pair)
         expected = (baselines.get(hero_id, 0.5) + baselines.get(ally_id, 0.5)) / 2
         synergies.append({"heroes": list(pair), "score": synergy_rating(rate, expected, record["matches"]), "matches": record["matches"]})
-    snapshot = {"metadata": raw.get("metadata", {}), "meta": sorted(meta, key=lambda item: item["hero_id"]), "matchups": sorted(matchups, key=lambda item: (item["hero_id"], item["opponent_id"])), "synergies": sorted(synergies, key=lambda item: item["heroes"])}
+    return {"metadata": raw.get("metadata", {}), "meta": sorted(meta, key=lambda item: item["hero_id"]), "matchups": sorted(matchups, key=lambda item: (item["hero_id"], item["opponent_id"])), "synergies": sorted(synergies, key=lambda item: item["heroes"])}
+
+
+def import_snapshot(raw_path: Path, output_dir: Path, mapping_path: Path, hero_ids: set[str]) -> dict:
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    snapshot = normalize_snapshot(raw, load_mapping(mapping_path), hero_ids)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "snapshot.json").write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return snapshot

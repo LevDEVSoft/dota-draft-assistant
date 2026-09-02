@@ -18,3 +18,6 @@ def validate_mapping(mapping: dict[int, str], hero_ids: set[str]) -> None:
     unknown = set(mapping.values()) - hero_ids
     if unknown:
         raise ValueError(f"Unknown mapped hero: {sorted(unknown)[0]}")
+    missing = hero_ids - set(mapping.values())
+    if missing:
+        raise ValueError(f"Missing mapped hero: {sorted(missing)[0]}")

@@ -51,3 +51,5 @@ tests/                pytest coverage for MVP behavior
 ## Statistical ingestion foundation
 
 Runtime recommendations continue to use the local manual seed data and never need network access. Future provider adapters belong under `data_sources/`; the included offline importer turns raw JSON plus `data/hero_id_map.json` into a clearly separate generated snapshot. Synthetic fixtures are tests only, not game data.
+
+`data/hero_id_map.json` contains the complete 126-hero Valve numeric-ID mapping, transcribed from SteamDatabase's Valve GameTracking-Dota2 [`npc_heroes.txt`](https://github.com/SteamDatabase/GameTracking-Dota2/blob/master/game/dota/pak01_dir/scripts/npc/npc_heroes.txt) constants. `dota-pick --sync-stats` is an explicit refresh command; it requires `STRATZ_API_TOKEN` and writes `data/generated/snapshot.json`. Add `--stats-role carry` (or another supported role) to restrict meta data; without it the five STRATZ positions are included.
