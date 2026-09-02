@@ -27,5 +27,12 @@ def matchup_rating(win_rate: float, baseline_win_rate: float, matches: int) -> f
     return _bounded(win_rate - baseline_win_rate, matches, MATCHUP_MAX)
 
 
+def dotabuff_matchup_rating(advantage: float, matches: int) -> float:
+    """Bounded public-page advantage in percentage points, confidence weighted."""
+    if not -1 <= advantage <= 1:
+        raise ValueError("advantage must be between -1 and 1")
+    return max(-MATCHUP_MAX, min(MATCHUP_MAX, advantage * 100 * confidence(matches)))
+
+
 def synergy_rating(pair_win_rate: float, expected_win_rate: float, matches: int) -> float:
     return _bounded(pair_win_rate - expected_win_rate, matches, SYNERGY_MAX)

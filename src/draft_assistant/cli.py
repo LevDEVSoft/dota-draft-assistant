@@ -3,6 +3,8 @@
 import argparse
 
 from .aliases import build_aliases
+from .data_sources.dotabuff import DotabuffError
+from .data_sources.opendota import OpenDotaError
 from .data_sources.stratz import StratzError
 from .heroes import load_data, parse_draft
 from .validation import validate_aliases
@@ -35,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--validate-data", action="store_true", help="validate local data files")
     parser.add_argument("--sync-stats", action="store_true", help="fetch a local STRATZ snapshot")
     parser.add_argument("--stats-role", choices=("carry", "mid", "offlane", "support", "hard_support"), default="carry", help="role-specific STRATZ statistics (default: carry)")
+    parser.add_argument("--sync-dotabuff", action="store_true", help="fetch a local DOTABUFF counter snapshot")
+    parser.add_argument("--sync-opendota", action="store_true", help="fetch a local OpenDota Herald/Guardian meta snapshot")
+    parser.add_argument("--window", choices=("week", "month", "year"), default="month", help="DOTABUFF time window (default: month)")
     args = parser.parse_args(argv)
     try:
         heroes, matchups, synergies = load_data()
@@ -51,10 +56,24 @@ def main(argv: list[str] | None = None) -> int:
             snapshot = sync(args.stats_role, DATA_DIR / "generated" / "snapshot.json", heroes, DATA_DIR / "hero_id_map.json")
             print(f"Snapshot written: data/generated/snapshot.json\nHeroes: {len(snapshot['meta'])}\nMatchups: {len(snapshot['matchups'])}\nSynergies: {len(snapshot['synergies'])}")
             return 0
+        if args.sync_dotabuff:
+            from .data_sources.dotabuff import role_candidates, sync
+            from .heroes import DATA_DIR
+            candidates = role_candidates(args.stats_role, heroes)
+            print(f"DOTABUFF sync\nRole: {args.stats_role}\nWindow: {args.window}\nHeroes: {len(candidates)}\nExpected requests: {len(candidates)}")
+            snapshot = sync(args.stats_role, args.window, DATA_DIR / "generated" / "dotabuff_snapshot.json", heroes)
+            print(f"Snapshot written: data/generated/dotabuff_snapshot.json\nMatchups: {len(snapshot['matchups'])}")
+            return 0
+        if args.sync_opendota:
+            from .data_sources.opendota import sync
+            from .heroes import DATA_DIR
+            snapshot = sync(DATA_DIR / "generated" / "opendota_snapshot.json", heroes, DATA_DIR / "hero_id_map.json")
+            print(f"Snapshot written: data/generated/opendota_snapshot.json\nHeroes: {len(snapshot['meta'])}\nUnmapped OpenDota hero IDs: {len(snapshot['metadata']['unmapped_hero_ids'])}\nMissing mapped hero IDs: {len(snapshot['metadata']['missing_mapped_hero_ids'])}")
+            return 0
         if not args.draft or args.top < 1:
             parser.error("Provide a draft and a positive --top value")
         choices = recommend(parse_draft(args.draft, heroes), args.top)
-    except (StratzError, ValueError) as error:
+    except (DotabuffError, OpenDotaError, StratzError, ValueError) as error:
         parser.error(str(error))
     if not choices:
         parser.error("No heroes available for this role")
