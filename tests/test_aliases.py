@@ -35,6 +35,12 @@ def test_unknown_alias_is_clear_error():
         normalize_hero("lifsteler", set(load_data()[0]))
 
 
+@pytest.mark.parametrize(("alias", "hero_id"), [("ring master", "ringmaster"), ("rm", "ringmaster"), ("largo", "largo"), ("kez", "kez")])
+def test_current_hero_aliases_resolve(alias, hero_id):
+    heroes = load_data()[0]
+    assert normalize_hero(alias, set(heroes), build_aliases(heroes)) == hero_id
+
+
 def test_alias_collision_is_rejected():
     heroes = {"shadow_fiend": Hero("shadow_fiend", "SF", ("mid",), 50, {"mid": 10}), "storm_spirit": Hero("storm_spirit", "sf", ("mid",), 50, {"mid": 10})}
     with pytest.raises(ValueError, match="Alias collision"):

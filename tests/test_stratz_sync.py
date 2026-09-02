@@ -23,10 +23,12 @@ def _heroes():
 def test_valve_mapping_covers_the_entire_local_roster():
     heroes = set(load_data()[0])
     mapping = load_mapping(DATA_DIR / "hero_id_map.json")
-    assert len(mapping) == len(heroes) == 126
+    assert len(mapping) == len(heroes) == 127
     validate_mapping(mapping, heroes)
     assert mapping[58] == "enchantress"
-    assert mapping[147] == "kez"
+    assert mapping[131] == "ringmaster"
+    assert mapping[145] == "kez"
+    assert mapping[155] == "largo"
 
 
 def test_execute_uses_mocked_authentication_and_parses_rate_limit_headers(monkeypatch):

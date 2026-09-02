@@ -15,7 +15,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "dotabuff_matchups.html"
 
 def test_all_heroes_have_unique_dotabuff_slugs():
     mapping = dotabuff.validate_slugs(set(load_data()[0]))
-    assert len(mapping) == 126 == len(set(mapping.values()))
+    assert len(mapping) == 127 == len(set(mapping.values()))
     assert mapping["shadow_fiend"] == "shadow-fiend"
 
 

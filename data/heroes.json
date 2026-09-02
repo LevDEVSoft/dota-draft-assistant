@@ -64,6 +64,7 @@
   {"id":"leshrac","display_name":"Leshrac","roles":["mid","offlane"],"base_rating":50,"role_scores":{"mid":10,"offlane":10}},
   {"id":"lich","display_name":"Lich","roles":["support","hard_support"],"base_rating":50,"role_scores":{"support":10,"hard_support":10}},
   {"id":"lina","display_name":"Lina","roles":["mid","support"],"base_rating":50,"role_scores":{"mid":10,"support":10}},
+  {"id":"largo","display_name":"Largo","roles":["support","hard_support"],"base_rating":50,"role_scores":{"support":10,"hard_support":10}},
   {"id":"lion","display_name":"Lion","roles":["support","hard_support"],"base_rating":50,"role_scores":{"support":10,"hard_support":10}},
   {"id":"lone_druid","display_name":"Lone Druid","roles":["carry","mid"],"base_rating":50,"role_scores":{"carry":10,"mid":10}},
   {"id":"luna","display_name":"Luna","roles":["carry"],"base_rating":50,"role_scores":{"carry":10}},
