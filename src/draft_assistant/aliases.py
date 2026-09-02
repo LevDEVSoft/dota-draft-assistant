@@ -1,5 +1,7 @@
 """Alias normalization for concise CLI draft input."""
 
+import re
+
 ALIASES = {
     "sf": "shadow_fiend", "сф": "shadow_fiend", "shadow fiend": "shadow_fiend",
     "bara": "spirit_breaker", "sb": "spirit_breaker", "spirit breaker": "spirit_breaker",
@@ -12,14 +14,29 @@ ALIASES = {
     "potm": "mirana", "ogre": "ogre_magi", "ogre magi": "ogre_magi",
     "underlord": "underlord", "jakiro": "jakiro", "silencer": "silencer",
     "medusa": "medusa", "chaos knight": "chaos_knight", "ck": "chaos_knight",
-    "terrorblade": "terrorblade", "tb": "terrorblade",
+    "terrorblade": "terrorblade", "tb": "terrorblade", "np": "natures_prophet", "furion": "natures_prophet", "natures prophet": "natures_prophet", "kotl": "keeper_of_the_light", "bh": "bounty_hunter", "bs": "bloodseeker", "cm": "crystal_maiden", "dp": "death_prophet", "drow": "drow_ranger", "dk": "dragon_knight", "es": "earthshaker", "ember": "ember_spirit", "fv": "faceless_void", "gyro": "gyrocopter", "lesh": "leshrac", "mk": "monkey_king", "morph": "morphling", "necro": "necrophos", "od": "outworld_destroyer", "pango": "pangolier", "sd": "shadow_demon", "sky": "skywrath_mage", "ta": "templar_assassin", "tide": "tidehunter", "treant": "treant_protector", "troll": "troll_warlord", "tusk": "tusk", "ursa": "ursa", "veno": "venomancer", "viper": "viper", "wr": "windranger", "windrunner": "windranger", "ww": "winter_wyvern", "zeus": "zeus",
 }
 
 
-def normalize_hero(value: str, known_heroes: set[str]) -> str:
+def normalize_key(value: str) -> str:
+    return " ".join(re.sub(r"[-_']", " ", value.casefold()).split())
+
+
+def build_aliases(heroes: dict) -> dict[str, str]:
+    aliases = {normalize_key(alias): hero_id for alias, hero_id in ALIASES.items()}
+    for hero in heroes.values():
+        for name in (hero.id, hero.display_name):
+            key = normalize_key(name)
+            if key in aliases and aliases[key] != hero.id:
+                raise ValueError(f"Alias collision: {name}")
+            aliases[key] = hero.id
+    return aliases
+
+
+def normalize_hero(value: str, known_heroes: set[str], aliases: dict[str, str] | None = None) -> str:
     """Return a canonical hero id or raise a concise validation error."""
-    key = " ".join(value.strip().casefold().replace("_", " ").split())
-    canonical = ALIASES.get(key, key.replace(" ", "_"))
+    key = normalize_key(value)
+    canonical = (aliases or ALIASES).get(key, key.replace(" ", "_"))
     if canonical not in known_heroes:
         raise ValueError(f"Unknown hero: {value}")
     return canonical

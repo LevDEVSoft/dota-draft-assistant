@@ -2,7 +2,9 @@
 
 import argparse
 
+from .aliases import build_aliases
 from .heroes import load_data, parse_draft
+from .validation import validate_aliases
 from .scoring import recommend
 
 
@@ -25,12 +27,21 @@ def format_explanation(item, heroes: dict) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Recommend Dota 2 hero picks from a manual draft.")
-    parser.add_argument("draft", help="enemies | allies | role")
+    parser.add_argument("draft", nargs="?", help="enemies | allies | role")
     parser.add_argument("--explain", action="store_true", help="show score reasons")
+    parser.add_argument("--top", type=int, default=3, help="number of picks to show")
+    parser.add_argument("--validate-data", action="store_true", help="validate local data files")
     args = parser.parse_args(argv)
     try:
         heroes, _, _ = load_data()
-        choices = recommend(parse_draft(args.draft, heroes))
+        aliases = build_aliases(heroes)
+        validate_aliases(aliases, set(heroes))
+        if args.validate_data:
+            print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}")
+            return 0
+        if not args.draft or args.top < 1:
+            parser.error("Provide a draft and a positive --top value")
+        choices = recommend(parse_draft(args.draft, heroes), args.top)
     except ValueError as error:
         parser.error(str(error))
     if not choices:
@@ -39,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n\n".join(format_explanation(item, heroes) for item in choices))
     else:
         for index, item in enumerate(choices, 1):
-            print(f"{index}. {item.hero.display_name:<13} {item.score:.1f}")
+            print(f"{index}. {item.hero.display_name:<20} {item.score:.1f}")
     return 0
 
 

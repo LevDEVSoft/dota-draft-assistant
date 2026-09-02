@@ -21,6 +21,11 @@ def test_parses_extra_whitespace_multi_word_heroes_and_empty_team_sections():
     assert draft.allies == ()
 
 
+def test_parses_commas_and_case_insensitively():
+    draft = parse_draft("SF,BARA,OGRE | JAKIRO,WD | CARRY")
+    assert draft.enemies == ("shadow_fiend", "spirit_breaker", "ogre_magi")
+
+
 @pytest.mark.parametrize("value", ["sf sf | underlord | carry", "sf | sf | carry"])
 def test_duplicate_heroes_are_rejected(value):
     with pytest.raises(ValueError, match="cannot appear more than once"):
