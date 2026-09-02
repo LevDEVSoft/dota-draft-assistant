@@ -47,3 +47,7 @@ src/draft_assistant/  CLI, parsing, models, and deterministic scoring
 data/                 hero definitions, matchups, and synergies
 tests/                pytest coverage for MVP behavior
 ```
+
+## Statistical ingestion foundation
+
+Runtime recommendations continue to use the local manual seed data and never need network access. Future provider adapters belong under `data_sources/`; the included offline importer turns raw JSON plus `data/hero_id_map.json` into a clearly separate generated snapshot. Synthetic fixtures are tests only, not game data.

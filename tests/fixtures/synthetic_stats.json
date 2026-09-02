@@ -1,0 +1,9 @@
+{
+  "metadata": {"provider": "synthetic_fixture", "generated_at": "2026-09-02T00:00:00Z", "patch": null, "rank_bracket": null, "sample_window": "test"},
+  "meta": [
+    {"hero_id": 54, "role": "carry", "matches": 5000, "wins": 2750, "pick_rate": 0.12},
+    {"hero_id": 8, "role": "carry", "matches": 50, "wins": 30}
+  ],
+  "matchups": [{"hero_id": 54, "opponent_id": 71, "matches": 500, "wins": 300}],
+  "synergies": [{"hero_id": 54, "ally_id": 8, "matches": 500, "wins": 290}]
+}
