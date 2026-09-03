@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
 
 from draft_assistant.aliases import normalize_hero
 from draft_assistant.cli import format_explanation
+from .animated_background import AnimatedBackground
 from .state import DraftState
 
 
@@ -68,8 +69,10 @@ class Window(QMainWindow):
         super().__init__(); self.state = DraftState(); self.animations = []
         self.setWindowTitle("Dota Draft Assistant"); self.resize(720, 760); self.setMinimumSize(560, 620)
         self.setFont(QFont("Segoe UI", 10)); self.setStyleSheet(self.theme())
-        root = QWidget(); root.setObjectName("root"); self.setCentralWidget(root)
-        layout = QVBoxLayout(root); layout.setContentsMargins(18, 16, 18, 16); layout.setSpacing(12)
+        self.background = AnimatedBackground(); self.background.setObjectName("root"); self.setCentralWidget(self.background)
+        content = QWidget(); content.setObjectName("content")
+        root_layout = QVBoxLayout(self.background); root_layout.setContentsMargins(0, 0, 0, 0); root_layout.addWidget(content)
+        layout = QVBoxLayout(content); layout.setContentsMargins(18, 16, 18, 16); layout.setSpacing(12)
         layout.addLayout(self.header())
         self.enemy, self.enemy_chips = self.team_section(layout, "Enemy heroes", "enemy")
         self.ally, self.ally_chips = self.team_section(layout, "Allied heroes", "ally")
@@ -85,7 +88,7 @@ class Window(QMainWindow):
     @staticmethod
     def theme():
         return """
-        QWidget#root { background:#121722; color:#e9edf5; }
+        QWidget#root { color:#e9edf5; } QWidget#content { background:transparent; }
         QLabel#appTitle { color:#f7f9fc; font-size:19px; font-weight:700; }
         QLabel#sectionTitle { color:#c7d2e5; font-size:11px; font-weight:700; letter-spacing:.5px; }
         QFrame#panel,QFrame#explanationPanel { background:#1b2230; border:1px solid #2b3548; border-radius:10px; }
@@ -129,7 +132,9 @@ class Window(QMainWindow):
     def actions(self):
         row = QHBoxLayout(); self.explain_button = QPushButton("Explain selected"); self.explain_button.setObjectName("primaryButton")
         self.clear_button = QPushButton("Clear draft"); self.save_button = QPushButton("Save draft")
-        row.addWidget(self.explain_button); row.addStretch(1); row.addWidget(self.clear_button); row.addWidget(self.save_button); return row
+        self.background_toggle = QCheckBox("Animated background"); self.background_toggle.setChecked(True)
+        self.background_toggle.toggled.connect(self.background.set_animation_enabled)
+        row.addWidget(self.explain_button); row.addStretch(1); row.addWidget(self.background_toggle); row.addWidget(self.clear_button); row.addWidget(self.save_button); return row
 
     def add_hero(self, input_box, side):
         try: hero_id = self.state.add(input_box.text(), side)

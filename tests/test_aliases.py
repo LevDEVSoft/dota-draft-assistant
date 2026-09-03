@@ -31,7 +31,8 @@ def test_required_common_aliases_normalize(alias):
 
 
 @pytest.mark.parametrize(("alias", "hero_id"), [
-    ("DS", "dark_seer"), ("ds", "dark_seer"),
+    ("DS", "dark_seer"), ("ds", "dark_seer"), ("DW", "dark_willow"), ("dw", "dark_willow"),
+    ("DB", "dawnbreaker"), ("db", "dawnbreaker"),
     ("wk", "wraith_king"), ("sf", "shadow_fiend"), ("sd", "shadow_demon"),
     ("ns", "night_stalker"), ("sb", "spirit_breaker"), ("bara", "spirit_breaker"),
     ("ls", "lifestealer"), ("naix", "lifestealer"), ("wd", "witch_doctor"),
