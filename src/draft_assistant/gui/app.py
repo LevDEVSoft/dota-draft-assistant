@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
 
 from draft_assistant.aliases import normalize_hero
 from draft_assistant.cli import format_explanation
+from draft_assistant.screen_detection import DetectionPoller, TemporalStabilizer
 from .autocomplete import HeroAutocomplete
 from .animated_background import AnimatedBackground
 from .state import DraftState
@@ -68,6 +69,9 @@ class RecommendationCard(QWidget):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__(); self.state = DraftState(); self.animations = []; self.autocompleters = {}
+        self.detection_poller = DetectionPoller(parent=self)
+        self.detection_poller.result.connect(self.apply_detected_result)
+        self.detection_poller.status.connect(lambda message: self.show_status(message))
         self.setWindowTitle("Dota Draft Assistant"); self.resize(720, 760); self.setMinimumSize(560, 620)
         self.setFont(QFont("Segoe UI", 10)); self.setStyleSheet(self.theme())
         self.background = AnimatedBackground(); self.background.setObjectName("root"); self.setCentralWidget(self.background)
@@ -122,7 +126,7 @@ class Window(QMainWindow):
         parent.addWidget(panel)
         self.autocompleters[input_box] = HeroAutocomplete(
             input_box, self.state.heroes, self.state.aliases,
-            lambda: self.state.enemies if side == "enemy" else self.state.allies,
+            lambda: self.state.side_heroes(side),
             lambda hero_id: self.accept_suggestion(input_box, side, hero_id),
         )
         return input_box, chips
@@ -142,7 +146,9 @@ class Window(QMainWindow):
         self.clear_button = QPushButton("Clear draft"); self.save_button = QPushButton("Save draft")
         self.background_toggle = QCheckBox("Animated background"); self.background_toggle.setChecked(True)
         self.background_toggle.toggled.connect(self.background.set_animation_enabled)
-        row.addWidget(self.explain_button); row.addStretch(1); row.addWidget(self.background_toggle); row.addWidget(self.clear_button); row.addWidget(self.save_button); return row
+        self.screen_detection = QComboBox(); self.screen_detection.addItems(["Screen detection: OFF", "Screen detection: AUTO"])
+        self.screen_detection.currentIndexChanged.connect(self.set_detection_mode)
+        row.addWidget(self.explain_button); row.addStretch(1); row.addWidget(self.screen_detection); row.addWidget(self.background_toggle); row.addWidget(self.clear_button); row.addWidget(self.save_button); return row
 
     def add_hero(self, input_box, side):
         try: hero_id = self.state.add(input_box.text(), side)
@@ -171,7 +177,7 @@ class Window(QMainWindow):
         chip = HeroChip(self.state.heroes[hero_id].display_name, lambda: self.remove_hero(hero_id, side, chip)); layout.addWidget(chip); return chip
 
     def rebuild_chips(self):
-        for layout, hero_ids, side in ((self.enemy_chips, self.state.enemies, "enemy"), (self.ally_chips, self.state.allies, "ally")):
+        for layout, hero_ids, side in ((self.enemy_chips, self.state.side_heroes("enemy"), "enemy"), (self.ally_chips, self.state.side_heroes("ally"), "ally")):
             while layout.count():
                 item = layout.takeAt(0)
                 if item.widget(): item.widget().deleteLater()
@@ -200,6 +206,18 @@ class Window(QMainWindow):
         fade.finished.connect(done); self.animations.extend((fade, grow)); fade.start(); grow.start()
 
     def set_always_on_top(self, enabled): self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, enabled); self.show()
+    def configure_screen_detection(self, capture, detector, stabilizer=None):
+        self.detection_poller.capture = capture; self.detection_poller.detector = detector
+        self.detection_poller.stabilizer = stabilizer or TemporalStabilizer()
+    def set_detection_mode(self, index):
+        if index:
+            self.detection_poller.start()
+        else:
+            self.detection_poller.stop()
+    def apply_detected_result(self, result):
+        if self.state.apply_detected_picks(result.allied_picks, result.enemy_picks): self.refresh()
+        count = len(result.allied_picks) + len(result.enemy_picks)
+        self.show_status(f"Dota detected · {count} picks" if count else "Waiting for draft screen")
     def refresh(self, rebuild=True):
         self.state.role, self.state.mode, self.state.top = self.role.currentText(), self.mode.currentText(), int(self.count.currentText())
         self.current = self.state.recommendations(); self.recs.clear()

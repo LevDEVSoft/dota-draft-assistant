@@ -11,6 +11,7 @@ from draft_assistant.gui.app import Window
 from draft_assistant.gui.animated_background import AnimatedBackground
 from draft_assistant.gui.autocomplete import ranked_suggestions
 from draft_assistant.gui.state import DraftState
+from draft_assistant.screen_detection.detector import DetectionResult, SlotDetection
 
 
 @pytest.fixture(scope="module")
@@ -112,3 +113,16 @@ def test_autocomplete_enter_navigation_and_escape(app):
     assert completer.list.currentRow() != first_row
     QTest.keyClick(window.ally, Qt.Key.Key_Escape)
     assert not completer.popup.isVisible()
+
+
+def test_screen_detection_off_keeps_manual_flow_and_auto_reports_calibration(app):
+    window = Window()
+    window.show()
+    add(window, "sf", "enemy")
+    assert window.screen_detection.currentIndex() == 0
+    window.screen_detection.setCurrentIndex(1)
+    assert window.status.text() == "Waiting for draft screen calibration"
+    window.apply_detected_result(DetectionResult((SlotDetection(0, "zeus", .99),), (), ()))
+    assert window.state.draft().enemies == ("shadow_fiend",)
+    assert window.state.draft().allies == ("zeus",)
+    assert window.status.text() == "Dota detected · 1 picks"
