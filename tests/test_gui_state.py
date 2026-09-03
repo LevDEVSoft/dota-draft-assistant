@@ -27,3 +27,10 @@ def test_role_state_swaps_manual_positions_and_clears_with_draft():
  assert next(a for a in s.role_assignments if a.hero_id=='pudge').manual
  s.remove('pudge'); assert all(a.hero_id!='pudge' for a in s.role_assignments)
  s.clear(); assert not s.role_assignments and s.analysis is None
+
+
+def test_inventory_uses_confirmed_role_and_resets():
+ s=DraftState(); s.add('lifestealer','ally'); s.select_player('lifestealer'); s.add_item('black_king_bar')
+ assert 'black_king_bar' not in {x.item_id for x in s.item_scores()}
+ s.remove_item('black_king_bar'); assert 'black_king_bar' in {x.item_id for x in s.item_scores()}
+ s.clear(); assert s.selected_player is None and not s.inventories

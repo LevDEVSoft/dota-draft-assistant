@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
 
 from draft_assistant.aliases import normalize_hero
 from draft_assistant.screen_detection import DetectionPoller, TemporalStabilizer
+from draft_assistant.item_knowledge import ITEMS
 from .autocomplete import HeroAutocomplete
 from .animated_background import AnimatedBackground
 from .state import DraftState
@@ -105,6 +106,7 @@ class Window(QMainWindow):
         self.enemy, self.enemy_chips = self.team_section(layout, "Enemy heroes", "enemy")
         self.ally, self.ally_chips = self.team_section(layout, "Allied heroes", "ally")
         layout.addWidget(self.role_plan_panel())
+        layout.addWidget(self.item_panel())
         layout.addWidget(self.recommendations_panel()); layout.addWidget(self.explanation())
         layout.addLayout(self.actions())
         self.status = QLabel(); self.status.setObjectName("status"); self.status.setMinimumHeight(20); layout.addWidget(self.status)
@@ -172,6 +174,14 @@ class Window(QMainWindow):
         title = QLabel("ROLES & GAME PLAN"); title.setObjectName("sectionTitle"); box.addWidget(title)
         self.role_rows = QVBoxLayout(); self.role_rows.setSpacing(3); box.addLayout(self.role_rows)
         self.game_plan = QLabel(); self.game_plan.setObjectName("appSubtitle"); self.game_plan.setWordWrap(True); box.addWidget(self.game_plan)
+        return panel
+
+    def item_panel(self):
+        panel=QFrame(); panel.setObjectName("panel"); box=QVBoxLayout(panel); box.setContentsMargins(13,9,13,10); box.setSpacing(5)
+        title=QLabel("ITEM OPTIONS"); title.setObjectName("sectionTitle"); box.addWidget(title)
+        row=QHBoxLayout(); self.player=QComboBox(); self.player.currentIndexChanged.connect(self.change_player); self.item_input=QLineEdit(); self.item_input.setPlaceholderText("Add owned item"); self.item_input.returnPressed.connect(self.add_owned_item); row.addWidget(self.player); row.addWidget(self.item_input,1); box.addLayout(row)
+        self.item_list=QListWidget(); self.item_list.setMaximumHeight(122); self.item_list.itemSelectionChanged.connect(self.show_item_detail); box.addWidget(self.item_list)
+        self.item_detail=QLabel(); self.item_detail.setObjectName("appSubtitle"); self.item_detail.setWordWrap(True); box.addWidget(self.item_detail)
         return panel
 
     def explanation(self):
@@ -284,8 +294,31 @@ class Window(QMainWindow):
         threats=" · ".join(x.replace("_"," ") for x in analysis.threats[:3]) or "none identified"
         needs=" · ".join(analysis.needs[:3]) or "balanced"
         self.game_plan.setText(f"Allied timing: likely {timing(analysis.allied_curve)} · Enemy timing: likely {timing(analysis.enemy_curve)}\nThreats: {threats} · Team needs: {needs}")
+        current=self.state.selected_player; self.player.blockSignals(True); self.player.clear()
+        for hero in self.state.side_heroes("ally"): self.player.addItem(self.state.heroes[hero].display_name,hero)
+        if current:
+            self.player.setCurrentIndex(self.player.findData(current))
+        self.player.blockSignals(False); self.refresh_items()
     def change_position(self, hero_id, position):
         self.state.set_position(hero_id, position); self.refresh()
+    def change_player(self,index):
+        if index>=0: self.state.select_player(self.player.itemData(index)); self.refresh_items()
+    def add_owned_item(self):
+        key=self.item_input.text().casefold().replace(" ","_").replace("'","")
+        matches=[item_id for item_id,spec in ITEMS.items() if key in item_id or key in spec.display_name.casefold()]
+        if matches:
+            self.state.add_item(matches[0]); self.item_input.clear(); self.refresh_items()
+        else: self.show_status("Unknown item",True)
+    def refresh_items(self):
+        self.item_list.clear(); scores=self.state.item_scores()
+        for score in scores[:6]:
+            spec=ITEMS[score.item_id]; item=QListWidgetItem(f"{spec.display_name}  {score.total:+.1f}"); item.setData(Qt.ItemDataRole.UserRole,score); self.item_list.addItem(item)
+        owned=", ".join(ITEMS[x].display_name for x in self.state.inventories.get(self.state.selected_player,[])) or "No owned items"
+        self.item_detail.setText(f"Owned: {owned}")
+    def show_item_detail(self):
+        item=self.item_list.currentItem()
+        if item:
+            score=item.data(Qt.ItemDataRole.UserRole); self.item_detail.setText(" · ".join((f"Matchup {score.matchup:+.1f}",f"Need {score.team_need:+.1f}",f"Role fit {score.role_fit:+.1f}",f"Redundancy {-score.redundancy:+.1f}",f"Poor fit {-score.poor_fit:+.1f}")))
     def toggle_explanation(self):
         if self.explanation_panel.isVisible(): self.explanation_panel.setVisible(False); self.explain_button.setText("Explain selected")
         else: self.show_explain()
