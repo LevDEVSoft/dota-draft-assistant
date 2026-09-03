@@ -1,4 +1,5 @@
 """PySide6 desktop application entry point."""
+import html
 import sys
 
 from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, QSize, Qt
@@ -6,10 +7,9 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
     QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QPushButton, QSizePolicy,
-    QToolButton, QVBoxLayout, QWidget)
+    QToolButton, QTextBrowser, QVBoxLayout, QWidget)
 
 from draft_assistant.aliases import normalize_hero
-from draft_assistant.cli import format_explanation
 from draft_assistant.screen_detection import DetectionPoller, TemporalStabilizer
 from .autocomplete import HeroAutocomplete
 from .animated_background import AnimatedBackground
@@ -59,11 +59,34 @@ class HeroChip(QFrame):
 
 class RecommendationCard(QWidget):
     def __init__(self, rank, recommendation):
-        super().__init__(); row = QHBoxLayout(self); row.setContentsMargins(12, 7, 12, 7)
+        super().__init__(); self.setObjectName("recommendationCard"); row = QHBoxLayout(self); row.setContentsMargins(14, 8, 14, 8); row.setSpacing(10)
         rank_label = QLabel(f"{rank:02d}"); rank_label.setObjectName("rank")
         name = QLabel(recommendation.hero.display_name); name.setObjectName("recommendationName")
         score = QLabel(f"{recommendation.score:+.2f}"); score.setObjectName("score")
         row.addWidget(rank_label); row.addWidget(name, 1); row.addWidget(score)
+
+
+def explanation_html(item, heroes):
+    """Present the existing score breakdown as readable local rich text."""
+    breakdown = item.breakdown
+    matchup_sources = dict(breakdown.matchup_sources)
+    synergy_sources = dict(breakdown.synergy_sources)
+    reasons = []
+    for enemy, score in breakdown.matchup_contributions:
+        if score:
+            reasons.append(f"<li><b>vs {html.escape(heroes.get(enemy).display_name if enemy in heroes else enemy.title())}</b><span>{score:+.1f} · {html.escape(matchup_sources.get(enemy, 'manual'))}</span></li>")
+    synergies = []
+    for ally, score in breakdown.synergy_contributions:
+        if score:
+            synergies.append(f"<li><b>with {html.escape(heroes.get(ally).display_name if ally in heroes else ally.title())}</b><span>{score:+.1f} · {html.escape(synergy_sources.get(ally, 'manual'))}</span></li>")
+    return f"""
+    <style>body{{font-family:'Segoe UI';color:#d7e1ef;margin:0}}h2{{color:#f4f7fc;margin:0;font-size:17px}}.score{{color:#aacdff;font-size:17px;font-weight:700;float:right}}.summary{{color:#9fb0c8;margin:5px 0 8px}}.pill{{background:#263a55;color:#cde0fa;border-radius:8px;padding:3px 7px;margin-right:5px}}h3{{color:#91add4;font-size:10px;letter-spacing:1px;margin:10px 0 3px}}ul{{margin:0;padding-left:15px}}li{{margin:2px 0}}li span{{color:#91a7c4;float:right}}</style>
+    <h2>{html.escape(item.hero.display_name)} <span class='score'>{item.score:+.1f}</span></h2>
+    <div class='summary'><span class='pill'>Base {breakdown.base:+.1f} · {html.escape(breakdown.base_source)}</span><span class='pill'>Role {breakdown.role:+.1f} · {html.escape(breakdown.role_source)}</span></div>
+    <div class='summary'>Position 1 sample: {breakdown.pos1_matches:,} · confidence: {breakdown.position_confidence:.3f} · total: <b>{breakdown.total:+.1f}</b></div>
+    {"<h3>MATCHUPS</h3><ul>" + "".join(reasons) + "</ul>" if reasons else ""}
+    {"<h3>SYNERGY</h3><ul>" + "".join(synergies) + "</ul>" if synergies else ""}
+    """
 
 
 class Window(QMainWindow):
@@ -87,40 +110,47 @@ class Window(QMainWindow):
         self.role.currentTextChanged.connect(self.refresh); self.mode.currentTextChanged.connect(self.refresh); self.count.currentTextChanged.connect(self.refresh)
         self.pin.toggled.connect(self.set_always_on_top); self.clear_button.clicked.connect(self.clear_draft)
         self.save_button.clicked.connect(lambda: self.show_status("Draft saving is not configured yet."))
-        self.explain_button.clicked.connect(self.toggle_explanation); self.recs.itemSelectionChanged.connect(self.show_explain)
+        self.explain_button.clicked.connect(self.toggle_explanation); self.recs.itemSelectionChanged.connect(self.update_explanation)
         self.refresh()
 
     @staticmethod
     def theme():
         return """
         QWidget#root { color:#e9edf5; } QWidget#content { background:transparent; }
-        QLabel#appTitle { color:#f7f9fc; font-size:19px; font-weight:700; }
-        QLabel#sectionTitle { color:#c7d2e5; font-size:11px; font-weight:700; letter-spacing:.5px; }
-        QFrame#panel,QFrame#explanationPanel { background:#1b2230; border:1px solid #2b3548; border-radius:10px; }
-        QLineEdit,QComboBox { background:#202938; border:1px solid #36435a; border-radius:7px; padding:7px 9px; min-height:18px; }
-        QLineEdit:focus,QComboBox:focus { border:1px solid #6b96e6; } QComboBox::drop-down { border:0; width:22px; }
-        QCheckBox { color:#c9d3e5; spacing:7px; } QCheckBox::indicator { width:15px; height:15px; border:1px solid #53627c; border-radius:4px; background:#202938; } QCheckBox::indicator:checked { background:#5e8de2; border-color:#78a5f5; }
-        QFrame#heroChip { background:#27354c; border:1px solid #405777; border-radius:13px; } QLabel#chipLabel { color:#edf3ff; font-weight:600; }
-        QToolButton#chipClose { color:#aebed8; border:0; border-radius:9px; font-size:16px; font-weight:700; min-width:18px; max-width:18px; min-height:18px; max-height:18px; padding:0; } QToolButton#chipClose:hover { background:#425b80; color:white; }
-        QListWidget { background:#1b2230; border:1px solid #2b3548; border-radius:10px; padding:4px; outline:none; } QListWidget::item { border-radius:7px; margin:2px; } QListWidget::item:hover { background:#26354d; } QListWidget::item:selected { background:#304b73; }
-        QFrame#autocomplete { background:#1c2637; border:1px solid #5775a0; border-radius:8px; } QListWidget#autocompleteList { background:transparent; border:0; border-radius:5px; padding:0; } QListWidget#autocompleteList::item { padding:7px 10px; margin:0; } QListWidget#autocompleteList::item:selected { background:#35557f; } QListWidget#autocompleteList::item:hover { background:#2b4262; }
-        QLabel#rank { color:#8fa9d0; font-family:Consolas; font-weight:700; } QLabel#recommendationName { color:#f2f5fb; font-size:12px; font-weight:600; } QLabel#score { color:#9bc4ff; font-family:Consolas; font-weight:700; }
-        QPushButton { background:#29364a; border:1px solid #3b4c66; border-radius:7px; color:#edf2fa; min-height:30px; padding:3px 12px; font-weight:600; } QPushButton:hover { background:#354862; border-color:#5775a0; } QPushButton:pressed { background:#223046; } QPushButton#primaryButton { background:#416cad; border-color:#5d8ed9; } QPushButton#primaryButton:hover { background:#4d7cc4; }
-        QLabel#explanation { color:#cdd7e7; padding:4px; } QLabel#status { color:#91a4c3; padding-left:3px; } QLabel#status[error="true"] { color:#ffaaa5; }
+        QLabel#appTitle { color:#f6f8fd; font-size:21px; font-weight:700; } QLabel#appSubtitle { color:#94a7c5; font-size:10px; }
+        QFrame#controlStrip { background:rgba(16, 25, 40, 194); border:1px solid rgba(102, 130, 173, 100); border-radius:11px; }
+        QLabel#controlLabel { color:#8398b8; font-size:9px; font-weight:700; letter-spacing:.5px; }
+        QLabel#sectionTitle,QLabel#enemyTitle,QLabel#allyTitle { color:#c9d6ea; font-size:10px; font-weight:700; letter-spacing:1px; } QLabel#enemyTitle { color:#d7a9b2; } QLabel#allyTitle { color:#9fc5e5; }
+        QFrame#panel,QFrame#explanationPanel { background:rgba(19, 28, 43, 224); border:1px solid rgba(84, 109, 145, 130); border-radius:12px; }
+        QFrame#recommendationPanel { background:rgba(16, 26, 42, 234); border:1px solid rgba(102, 139, 193, 155); border-radius:14px; }
+        QLineEdit,QComboBox { background:rgba(26, 38, 57, 235); border:1px solid #3a4e6e; border-radius:7px; padding:6px 9px; min-height:17px; }
+        QLineEdit:focus,QComboBox:focus { border:1px solid #719be0; } QComboBox::drop-down { border:0; width:22px; }
+        QCheckBox { color:#b8c7dd; spacing:6px; font-size:9px; } QCheckBox::indicator { width:14px; height:14px; border:1px solid #536782; border-radius:4px; background:#1d2a3d; } QCheckBox::indicator:checked { background:#6090dd; border-color:#85aff3; }
+        QFrame#heroChip { background:rgba(40, 57, 82, 235); border:1px solid #49678e; border-radius:13px; } QLabel#chipLabel { color:#edf3ff; font-weight:600; }
+        QToolButton#chipClose { color:#aebed8; border:0; border-radius:9px; font-size:16px; font-weight:700; min-width:18px; max-width:18px; min-height:18px; max-height:18px; padding:0; } QToolButton#chipClose:hover { background:#496989; color:white; }
+        QListWidget { background:transparent; border:0; padding:2px; outline:none; } QListWidget::item { border-radius:9px; margin:2px; } QListWidget::item:hover { background:rgba(69, 96, 137, 135); } QListWidget::item:selected { background:rgba(63, 105, 163, 190); }
+        QWidget#recommendationCard { background:transparent; } QLabel#rank { color:#8ba6cd; min-width:25px; font-family:Consolas; font-weight:700; } QLabel#recommendationName { color:#f4f7fc; font-size:13px; font-weight:600; } QLabel#score { color:#a9ccff; min-width:62px; font-family:Consolas; font-weight:700; qproperty-alignment:AlignRight; }
+        QFrame#autocomplete { background:#1c293c; border:1px solid #6387bd; border-radius:8px; } QListWidget#autocompleteList { background:transparent; border:0; border-radius:5px; padding:0; } QListWidget#autocompleteList::item { padding:7px 10px; margin:0; } QListWidget#autocompleteList::item:selected { background:#35557f; } QListWidget#autocompleteList::item:hover { background:#2b4262; }
+        QPushButton { background:rgba(42, 58, 80, 225); border:1px solid #3e5475; border-radius:7px; color:#dce6f4; min-height:28px; padding:2px 10px; font-size:9px; font-weight:600; } QPushButton:hover { background:#354c6a; border-color:#6689bb; } QPushButton:pressed { background:#24344c; } QPushButton#primaryButton { background:#416fae; border-color:#6b9be0; color:white; } QPushButton#primaryButton:hover { background:#5280c4; } QPushButton#quietButton { background:transparent; border-color:transparent; color:#9eafc8; } QPushButton#quietButton:hover { background:rgba(61, 83, 113, 155); border-color:rgba(92, 124, 165, 130); }
+        QTextBrowser#explanation { background:transparent; border:0; color:#cdd7e7; padding:2px; } QLabel#status { color:#91a4c3; padding-left:3px; font-size:9px; } QLabel#status[error="true"] { color:#ffaaa5; }
         """
 
     def header(self):
-        row = QHBoxLayout(); title = QLabel("Dota Draft Assistant"); title.setObjectName("appTitle"); row.addWidget(title, 1)
+        row = QHBoxLayout(); row.setSpacing(12)
+        brand = QVBoxLayout(); brand.setSpacing(1); title = QLabel("Dota Draft Assistant"); title.setObjectName("appTitle"); subtitle = QLabel("Live draft companion · local recommendations"); subtitle.setObjectName("appSubtitle")
+        brand.addWidget(title); brand.addWidget(subtitle); row.addLayout(brand, 1)
+        strip = QFrame(); strip.setObjectName("controlStrip"); controls = QHBoxLayout(strip); controls.setContentsMargins(10, 6, 10, 6); controls.setSpacing(8)
         self.role = QComboBox(); self.role.addItems(["carry", "mid", "offlane", "support", "hard_support"])
         self.mode = QComboBox(); self.mode.addItems(["manual", "stats", "hybrid"]); self.mode.setCurrentText("hybrid")
         self.count = QComboBox(); self.count.addItems(["3", "5", "10"]); self.count.setCurrentText("5")
         self.pin = QCheckBox("Always on top")
-        for label, control in (("Role", self.role), ("Mode", self.mode), ("Top", self.count)): row.addWidget(QLabel(label)); row.addWidget(control)
-        row.addWidget(self.pin); return row
+        for label, control in (("ROLE", self.role), ("MODE", self.mode), ("SHOW", self.count)):
+            group = QVBoxLayout(); group.setSpacing(2); caption = QLabel(label); caption.setObjectName("controlLabel"); group.addWidget(caption); group.addWidget(control); controls.addLayout(group)
+        controls.addWidget(self.pin); row.addWidget(strip); return row
 
     def team_section(self, parent, title, side):
-        panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(12, 10, 12, 12); box.setSpacing(8)
-        heading = QLabel(title.upper()); heading.setObjectName("sectionTitle"); box.addWidget(heading)
+        panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(13, 9, 13, 10); box.setSpacing(6)
+        heading = QLabel(title.upper()); heading.setObjectName(f"{side}Title"); box.addWidget(heading)
         host = QWidget(); chips = FlowLayout(host); host.setLayout(chips); box.addWidget(host)
         input_box = QLineEdit(); input_box.setPlaceholderText("Type hero alias and press Enter"); input_box.returnPressed.connect(lambda: self.add_hero(input_box, side)); box.addWidget(input_box)
         parent.addWidget(panel)
@@ -132,18 +162,18 @@ class Window(QMainWindow):
         return input_box, chips
 
     def recommendations_panel(self):
-        panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(12, 10, 12, 12); box.setSpacing(7)
-        title = QLabel("RECOMMENDATIONS"); title.setObjectName("sectionTitle"); box.addWidget(title)
-        self.recs = QListWidget(); self.recs.setMinimumHeight(160); box.addWidget(self.recs); return panel
+        panel = QFrame(); panel.setObjectName("recommendationPanel"); box = QVBoxLayout(panel); box.setContentsMargins(14, 11, 14, 12); box.setSpacing(5)
+        heading = QHBoxLayout(); title = QLabel("RECOMMENDATIONS"); title.setObjectName("sectionTitle"); note = QLabel("Best available picks"); note.setObjectName("appSubtitle"); heading.addWidget(title); heading.addStretch(1); heading.addWidget(note); box.addLayout(heading)
+        self.recs = QListWidget(); self.recs.setMinimumHeight(224); box.addWidget(self.recs); return panel
 
     def explanation(self):
-        self.explanation_panel = QFrame(); self.explanation_panel.setObjectName("explanationPanel"); box = QVBoxLayout(self.explanation_panel); box.setContentsMargins(12, 8, 12, 10)
-        heading = QLabel("SCORE BREAKDOWN"); heading.setObjectName("sectionTitle"); self.detail = QLabel(); self.detail.setObjectName("explanation"); self.detail.setWordWrap(True)
+        self.explanation_panel = QFrame(); self.explanation_panel.setObjectName("explanationPanel"); box = QVBoxLayout(self.explanation_panel); box.setContentsMargins(13, 9, 13, 10)
+        heading = QLabel("SCORE BREAKDOWN"); heading.setObjectName("sectionTitle"); self.detail = QTextBrowser(); self.detail.setObjectName("explanation"); self.detail.setOpenExternalLinks(False); self.detail.setMinimumHeight(118)
         box.addWidget(heading); box.addWidget(self.detail); self.explanation_panel.setVisible(False); return self.explanation_panel
 
     def actions(self):
         row = QHBoxLayout(); self.explain_button = QPushButton("Explain selected"); self.explain_button.setObjectName("primaryButton")
-        self.clear_button = QPushButton("Clear draft"); self.save_button = QPushButton("Save draft")
+        self.clear_button = QPushButton("Clear"); self.clear_button.setObjectName("quietButton"); self.save_button = QPushButton("Save"); self.save_button.setObjectName("quietButton")
         self.background_toggle = QCheckBox("Animated background"); self.background_toggle.setChecked(True)
         self.background_toggle.toggled.connect(self.background.set_animation_enabled)
         self.screen_detection = QComboBox(); self.screen_detection.addItems(["Screen detection: OFF", "Screen detection: AUTO"])
@@ -229,9 +259,12 @@ class Window(QMainWindow):
         if self.explanation_panel.isVisible(): self.explanation_panel.setVisible(False); self.explain_button.setText("Explain selected")
         else: self.show_explain()
     def show_explain(self):
+        self.explanation_panel.setVisible(True); self.explain_button.setText("Hide explanation")
+        self.update_explanation()
+    def update_explanation(self):
         row = self.recs.currentRow()
         if 0 <= row < len(self.current):
-            self.detail.setText(format_explanation(self.current[row], self.state.heroes)); self.explanation_panel.setVisible(True); self.explain_button.setText("Hide explanation")
+            self.detail.setHtml(explanation_html(self.current[row], self.state.heroes))
     def clear_draft(self):
         self.state.clear(); self.explanation_panel.setVisible(False); self.explain_button.setText("Explain selected"); self.show_status(""); self.refresh(); self.enemy.setFocus()
 

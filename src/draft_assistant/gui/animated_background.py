@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import math
 import random
 
-from PySide6.QtCore import QElapsedTimer, QTimer
+from PySide6.QtCore import QElapsedTimer, QTimer, Qt
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -20,10 +20,10 @@ class Particle:
 
 
 class AnimatedBackground(QWidget):
-    """A low-cost, calm field of drifting particles and a soft ribbon."""
+    """A low-cost field of drifting particles and original flowing ribbons."""
 
-    FPS = 30
-    PARTICLE_COUNT = 42
+    FPS = 36
+    PARTICLE_COUNT = 34
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -58,7 +58,7 @@ class AnimatedBackground(QWidget):
     def advance(self):
         milliseconds = max(1, self.elapsed.restart())
         seconds = min(milliseconds / 1000, 0.1)
-        self.phase = (self.phase + seconds * 0.11) % (math.tau * 100)
+        self.phase = (self.phase + seconds * 0.16) % (math.tau * 100)
         for particle in self.particles:
             particle.x = (particle.x + particle.speed_x * seconds) % 1.0
             particle.y = (particle.y + particle.speed_y * seconds) % 1.0
@@ -67,27 +67,42 @@ class AnimatedBackground(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         gradient = QLinearGradient(0, 0, self.width(), self.height())
-        gradient.setColorAt(0, QColor("#0a101b"))
-        gradient.setColorAt(1, QColor("#111b2d"))
+        gradient.setColorAt(0, QColor("#070c16"))
+        gradient.setColorAt(.52, QColor("#0c1525"))
+        gradient.setColorAt(1, QColor("#111d31"))
         painter.fillRect(self.rect(), gradient)
-        self._draw_ribbon(painter)
-        painter.setPen(QPen(QColor(154, 190, 255, 28), 1))
-        painter.setBrush(QColor(159, 197, 255, 28))
+        self._draw_ribbons(painter)
         for particle in self.particles:
-            color = QColor(165, 204, 255, particle.alpha)
+            color = QColor(180, 211, 255, particle.alpha)
             painter.setPen(QPen(color, 1))
             painter.setBrush(color)
-            painter.drawEllipse(particle.x * self.width(), particle.y * self.height(), particle.radius, particle.radius)
+            painter.drawEllipse(particle.x * self.width(), particle.y * self.height(), particle.radius * 2, particle.radius * 2)
 
-    def _draw_ribbon(self, painter):
+    def _draw_ribbons(self, painter):
         if not self.width() or not self.height():
             return
+        self._draw_ribbon(painter, .30, 56, 96, .55, QColor(76, 126, 206, 26), QColor(116, 167, 239, 54))
+        self._draw_ribbon(painter, .61, 72, 144, .34, QColor(63, 103, 178, 24), QColor(133, 183, 244, 42))
+        self._draw_ribbon(painter, .84, 40, 72, .82, QColor(77, 117, 188, 20), QColor(153, 196, 249, 34))
+
+    def _draw_ribbon(self, painter, vertical, amplitude, wavelength, speed, fill, highlight):
+        baseline = self.height() * vertical
         path = QPainterPath()
-        baseline = self.height() * 0.72
-        path.moveTo(0, baseline)
-        for x in range(0, self.width() + 1, 24):
-            wave = math.sin(x / 155 + self.phase) * 18 + math.sin(x / 77 + self.phase * 0.6) * 7
+        path.moveTo(-30, baseline)
+        for x in range(-30, self.width() + 40, 20):
+            wave = math.sin(x / wavelength + self.phase * speed) * amplitude
+            wave += math.sin(x / (wavelength * .46) + self.phase * speed * 1.4) * amplitude * .22
             path.lineTo(x, baseline + wave)
-        painter.setPen(QPen(QColor(94, 145, 231, 22), 2))
+        painter.setPen(QPen(highlight, 1.4))
         painter.setBrush(QColor(0, 0, 0, 0))
         painter.drawPath(path)
+
+        ribbon = QPainterPath(path)
+        for x in range(self.width() + 30, -40, -20):
+            wave = math.sin(x / wavelength + self.phase * speed + .42) * amplitude
+            wave += math.sin(x / (wavelength * .46) + self.phase * speed * 1.4 + .42) * amplitude * .22
+            ribbon.lineTo(x, baseline + wave + amplitude * .42)
+        ribbon.closeSubpath()
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(fill)
+        painter.drawPath(ribbon)
