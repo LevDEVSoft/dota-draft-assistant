@@ -7,9 +7,11 @@ name = "dota-draft-assistant"
 version = "0.1.0"
 description = "Small local Dota 2 draft assistant"
 requires-python = ">=3.12"
+dependencies = ["PySide6>=6.8"]
 
 [project.scripts]
 dota-pick = "draft_assistant.cli:main"
+dota-pick-gui = "draft_assistant.gui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -12,7 +12,7 @@ from .scoring import recommend
 
 
 def _display(hero_id: str, heroes: dict) -> str:
-    return heroes[hero_id].display_name
+    return heroes[hero_id].display_name if hero_id in heroes else hero_id.title()
 
 
 def format_explanation(item, heroes: dict) -> str:
