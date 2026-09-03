@@ -17,6 +17,8 @@ ALIASES = {
     "terrorblade": "terrorblade", "tb": "terrorblade", "np": "natures_prophet", "furion": "natures_prophet", "natures prophet": "natures_prophet", "kotl": "keeper_of_the_light", "bh": "bounty_hunter", "bs": "bloodseeker", "cm": "crystal_maiden", "dp": "death_prophet", "drow": "drow_ranger", "dk": "dragon_knight", "es": "earthshaker", "ember": "ember_spirit", "fv": "faceless_void", "gyro": "gyrocopter", "lesh": "leshrac", "mk": "monkey_king", "morph": "morphling", "necro": "necrophos", "od": "outworld_destroyer", "pango": "pangolier", "sd": "shadow_demon", "sky": "skywrath_mage", "ta": "templar_assassin", "tide": "tidehunter", "treant": "treant_protector", "troll": "troll_warlord", "tusk": "tusk", "ursa": "ursa", "veno": "venomancer", "viper": "viper", "wr": "windranger", "windrunner": "windranger", "ww": "winter_wyvern", "zeus": "zeus", "ringmaster": "ringmaster", "ring master": "ringmaster", "rm": "ringmaster", "largo": "largo", "kez": "kez",
 }
 
+ALIASES.update({"вк":"wraith_king","ns":"night_stalker","нс":"night_stalker","zombie":"undying","зомби":"undying","найкс":"lifestealer","лс":"lifestealer","бара":"spirit_breaker","jug":"juggernaut","pl":"phantom_lancer","пл":"phantom_lancer","спектра":"spectre","спектр":"spectre","вд":"witch_doctor","цм":"crystal_maiden","вокер":"invoker","voker":"invoker","bb":"bristleback","bristle":"bristleback","shaker":"earthshaker","timber":"timbersaw","storm":"storm_spirit","willow":"dark_willow","snap":"snapfire","primal":"primal_beast","alch":"alchemist"})
+
 
 def normalize_key(value: str) -> str:
     return " ".join(re.sub(r"[-_']", " ", value.casefold()).split())
@@ -36,7 +38,8 @@ def build_aliases(heroes: dict) -> dict[str, str]:
 def normalize_hero(value: str, known_heroes: set[str], aliases: dict[str, str] | None = None) -> str:
     """Return a canonical hero id or raise a concise validation error."""
     key = normalize_key(value)
-    canonical = (aliases or ALIASES).get(key, key.replace(" ", "_"))
+    registry = aliases or {normalize_key(alias): hero for alias, hero in ALIASES.items()}
+    canonical = registry.get(key, key.replace(" ", "_"))
     if canonical not in known_heroes:
         raise ValueError(f"Unknown hero: {value}")
     return canonical
