@@ -6,3 +6,9 @@ def test_draft_state_add_alias_remove_clear_and_recommendations():
  with pytest.raises(ValueError): s.add('sf','ally')
  assert s.suggestions('lif')==['Lifestealer']; s.remove('witch_doctor'); assert not s.allies
  s.role='carry'; s.mode='manual'; assert s.recommendations(); s.clear(); assert not s.enemies
+
+
+@pytest.mark.parametrize("value", ["DS", "ds", "Dark Seer"])
+def test_gui_state_accepts_dark_seer_aliases(value):
+ s=DraftState()
+ assert s.add(value, 'enemy') == 'dark_seer'
