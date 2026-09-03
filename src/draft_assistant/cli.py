@@ -34,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("draft", nargs="?", help="enemies | allies | role")
     parser.add_argument("--explain", action="store_true", help="show score reasons")
     parser.add_argument("--top", type=int, default=3, help="number of picks to show")
+    parser.add_argument("--data", choices=("manual", "stats"), default="manual", help="local scoring data source")
     parser.add_argument("--validate-data", action="store_true", help="validate local data files")
     parser.add_argument("--sync-stats", action="store_true", help="fetch a local STRATZ snapshot")
     parser.add_argument("--stats-role", choices=("carry", "mid", "offlane", "support", "hard_support"), default="carry", help="role-specific STRATZ statistics (default: carry)")
@@ -72,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not args.draft or args.top < 1:
             parser.error("Provide a draft and a positive --top value")
-        choices = recommend(parse_draft(args.draft, heroes), args.top)
+        choices = recommend(parse_draft(args.draft, heroes), args.top, args.data)
     except (DotabuffError, OpenDotaError, StratzError, ValueError) as error:
         parser.error(str(error))
     if not choices:

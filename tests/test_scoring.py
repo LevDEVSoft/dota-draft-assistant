@@ -3,6 +3,8 @@ import pytest
 from draft_assistant.cli import format_explanation
 from draft_assistant.heroes import load_data, parse_draft
 from draft_assistant.scoring import recommend
+import draft_assistant.scoring as scoring
+from draft_assistant.models import Draft, Hero
 
 
 DRAFT = "sf bara ogre silencer | underlord jakiro wd | carry"
@@ -84,3 +86,11 @@ def test_breakdown_total_is_exact_scoring_formula():
     breakdown = item.breakdown
     assert breakdown.total == breakdown.base + breakdown.role + sum(value for _, value in breakdown.matchup_contributions) + sum(value for _, value in breakdown.synergy_contributions)
     assert item.score == breakdown.total
+
+
+def test_stats_components_replace_manual_values_without_double_counting(monkeypatch):
+    heroes = {"axe": Hero("axe", "Axe", ("carry",), 50, {"carry": 10}), "bane": Hero("bane", "Bane", ("support",), 50, {"support": 10}), "chen": Hero("chen", "Chen", ("support",), 50, {"support": 10})}
+    monkeypatch.setattr(scoring, "load_data", lambda: (heroes, {"axe": {"bane": 9}}, {("axe", "chen"): 7}))
+    monkeypatch.setattr(scoring, "_stats", lambda: ({"axe": 2}, {"axe": {"bane": 3}}, {("axe", "chen"): 4}))
+    result = scoring.recommend(Draft(("bane",), ("chen",), "carry"), data="stats")[0]
+    assert (result.breakdown.base, result.breakdown.matchups, result.breakdown.synergies) == (2, 3, 4)
