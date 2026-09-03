@@ -90,6 +90,7 @@ def test_breakdown_total_is_exact_scoring_formula():
 
 def test_stats_components_replace_manual_values_without_double_counting(monkeypatch):
     heroes = {"axe": Hero("axe", "Axe", ("carry",), 50, {"carry": 10}), "bane": Hero("bane", "Bane", ("support",), 50, {"support": 10}), "chen": Hero("chen", "Chen", ("support",), 50, {"support": 10})}
+    scoring._local_data.cache_clear()
     monkeypatch.setattr(scoring, "load_data", lambda: (heroes, {"axe": {"bane": 9}}, {("axe", "chen"): 7}))
     monkeypatch.setattr(scoring, "_stats", lambda: ({"axe": 2}, {"axe": (2, 100000)}, {"axe": {"bane": 3}}, {("axe", "chen"): 4}))
     result = scoring.recommend(Draft(("bane",), ("chen",), "carry"), data="stats")[0]

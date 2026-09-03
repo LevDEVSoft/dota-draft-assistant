@@ -1,12 +1,16 @@
 """Explicit deterministic recommendation formula."""
 
 import json
+from functools import lru_cache
 
 from .heroes import DATA_DIR, load_data
 from .models import Draft, Recommendation, ScoreBreakdown
 
 # Centralized weights: 1.0 preserves hand-authored JSON ranking-point values.
 BASE_WEIGHT = ROLE_WEIGHT = MATCHUP_WEIGHT = SYNERGY_WEIGHT = 1.0
+CURATED_MATCHUP_WEIGHT = 0.15
+CURATED_SYNERGY_WEIGHT = 0.15
+CURATED_ADJUSTMENT_CAP = 3.0
 
 
 def matchup_score(candidate: str, enemy: str, matchups: dict[str, dict[str, float]]) -> float:
@@ -14,10 +18,16 @@ def matchup_score(candidate: str, enemy: str, matchups: dict[str, dict[str, floa
     return matchups.get(candidate, {}).get(enemy, 0.0)
 
 
+@lru_cache(maxsize=1)
+def _local_data():
+    return load_data()
+
+
 def synergy_score(first: str, second: str, synergies: dict[tuple[str, str], float]) -> float:
     """Synergy pairs are unordered, so lookup is symmetric."""
     return synergies.get(tuple(sorted((first, second))), 0.0)
 
+@lru_cache(maxsize=1)
 def _stats() -> tuple[dict[str, float], dict[str, tuple[float, int, int, float]], dict[str, dict[str, float]], dict[tuple[str, str], float]]:
     """Load optional local snapshots; generated data never triggers network access."""
     open_path, stratz_path = DATA_DIR / "generated" / "opendota_snapshot.json", DATA_DIR / "generated" / "snapshot.json"
@@ -34,7 +44,7 @@ def _stats() -> tuple[dict[str, float], dict[str, tuple[float, int, int, float]]
 
 def recommend(draft: Draft, limit: int = 3, data: str = "manual") -> list[Recommendation]:
     """Score valid heroes from the data-defined rating, matchups, synergies, and role score."""
-    heroes, matchups, synergies = load_data()
+    heroes, matchups, synergies = _local_data()
     if data not in {"manual", "stats", "hybrid"}:
         raise ValueError("data must be manual, stats, or hybrid")
     meta_stats, pos_meta, matchup_stats, synergy_stats = _stats() if data in {"stats", "hybrid"} else ({}, {}, {}, {})
@@ -47,6 +57,10 @@ def recommend(draft: Draft, limit: int = 3, data: str = "manual") -> list[Recomm
         position = pos_meta.get(hero.id, (None, 0, 0, 0)); pos_score, pos_matches, all_matches, share = (position[0], position[1], 0, 1.0) if len(position) == 2 else position; confidence = pos_matches / (pos_matches + 1000) if data in {"stats", "hybrid"} else 1.0; confidence *= share if data in {"stats", "hybrid"} else 1.0
         matchups_for_hero = tuple((enemy, matchup_score(hero.id, enemy, matchup_stats if enemy in matchup_stats.get(hero.id, {}) else (matchups if use_manual else {})) * confidence * MATCHUP_WEIGHT) for enemy in draft.enemies)
         synergies_for_hero = tuple((ally, synergy_score(hero.id, ally, synergy_stats if tuple(sorted((hero.id, ally))) in synergy_stats else (synergies if use_manual else {})) * confidence * SYNERGY_WEIGHT) for ally in draft.allies)
+        if data == "hybrid":
+            curated = [matchup_score(hero.id, enemy, matchups) * CURATED_MATCHUP_WEIGHT for enemy in draft.enemies] + [synergy_score(hero.id, ally, synergies) * CURATED_SYNERGY_WEIGHT for ally in draft.allies]
+            total = max(-CURATED_ADJUSTMENT_CAP, min(CURATED_ADJUSTMENT_CAP, sum(curated)))
+            if curated: matchups_for_hero = (*matchups_for_hero, ("curated adjustment", total))
         breakdown = ScoreBreakdown((pos_score if pos_score is not None else meta_stats.get(hero.id, hero.base_rating if use_manual else 0)) * BASE_WEIGHT, 0.0, matchups_for_hero, synergies_for_hero, "stratz-pos1" if pos_score is not None else ("opendota-fallback" if hero.id in meta_stats else ("hero-data" if use_manual else "missing")), "eligibility", tuple((enemy, "stratz" if enemy in matchup_stats.get(hero.id, {}) else ("manual" if use_manual else "missing")) for enemy in draft.enemies), tuple((ally, "stratz" if tuple(sorted((hero.id, ally))) in synergy_stats else ("manual" if use_manual else "missing")) for ally in draft.allies), pos_matches, confidence)
         results.append(Recommendation(hero, breakdown))
     return sorted(results, key=lambda item: (-item.score, item.hero.display_name))[:limit]
