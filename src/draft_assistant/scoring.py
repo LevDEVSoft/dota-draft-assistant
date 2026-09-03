@@ -34,16 +34,17 @@ def _stats() -> tuple[dict[str, float], dict[str, dict[str, float]], dict[tuple[
 def recommend(draft: Draft, limit: int = 3, data: str = "manual") -> list[Recommendation]:
     """Score valid heroes from the data-defined rating, matchups, synergies, and role score."""
     heroes, matchups, synergies = load_data()
-    if data not in {"manual", "stats"}:
-        raise ValueError("data must be manual or stats")
-    meta_stats, matchup_stats, synergy_stats = _stats() if data == "stats" else ({}, {}, {})
+    if data not in {"manual", "stats", "hybrid"}:
+        raise ValueError("data must be manual, stats, or hybrid")
+    meta_stats, matchup_stats, synergy_stats = _stats() if data in {"stats", "hybrid"} else ({}, {}, {})
     picks = set(draft.enemies + draft.allies)
     results = []
     for hero in heroes.values():
         if draft.role not in hero.roles or hero.id in picks:
             continue
-        matchups_for_hero = tuple((enemy, matchup_score(hero.id, enemy, matchup_stats if enemy in matchup_stats.get(hero.id, {}) else matchups) * MATCHUP_WEIGHT) for enemy in draft.enemies)
-        synergies_for_hero = tuple((ally, synergy_score(hero.id, ally, synergy_stats if tuple(sorted((hero.id, ally))) in synergy_stats else synergies) * SYNERGY_WEIGHT) for ally in draft.allies)
-        breakdown = ScoreBreakdown(meta_stats.get(hero.id, hero.base_rating) * BASE_WEIGHT, hero.role_scores[draft.role] * ROLE_WEIGHT, matchups_for_hero, synergies_for_hero)
+        use_manual = data in {"manual", "hybrid"}
+        matchups_for_hero = tuple((enemy, matchup_score(hero.id, enemy, matchup_stats if enemy in matchup_stats.get(hero.id, {}) else (matchups if use_manual else {})) * MATCHUP_WEIGHT) for enemy in draft.enemies)
+        synergies_for_hero = tuple((ally, synergy_score(hero.id, ally, synergy_stats if tuple(sorted((hero.id, ally))) in synergy_stats else (synergies if use_manual else {})) * SYNERGY_WEIGHT) for ally in draft.allies)
+        breakdown = ScoreBreakdown((meta_stats.get(hero.id, hero.base_rating if use_manual else 0)) * BASE_WEIGHT, hero.role_scores[draft.role] * ROLE_WEIGHT, matchups_for_hero, synergies_for_hero, "opendota" if hero.id in meta_stats else ("hero-data" if use_manual else "missing"), "hero-data", tuple((enemy, "stratz" if enemy in matchup_stats.get(hero.id, {}) else ("manual" if use_manual else "missing")) for enemy in draft.enemies), tuple((ally, "stratz" if tuple(sorted((hero.id, ally))) in synergy_stats else ("manual" if use_manual else "missing")) for ally in draft.allies))
         results.append(Recommendation(hero, breakdown))
     return sorted(results, key=lambda item: (-item.score, item.hero.display_name))[:limit]

@@ -25,6 +25,10 @@ class ScoreBreakdown:
     role: float
     matchup_contributions: tuple[tuple[str, float], ...]
     synergy_contributions: tuple[tuple[str, float], ...]
+    base_source: str = "hero-data"
+    role_source: str = "hero-data"
+    matchup_sources: tuple[tuple[str, str], ...] = ()
+    synergy_sources: tuple[tuple[str, str], ...] = ()
 
     @property
     def matchups(self) -> float:

@@ -95,7 +95,7 @@ def execute(query: str, variables: dict | None = None, timeout: int = 30) -> dic
 
 
 META_QUERY = """query Meta($ids:[Short!],$brackets:[RankBracketBasicEnum!],$positions:[MatchPlayerPositionType!]) { heroStats { stats(heroIds:$ids, bracketBasicIds:$brackets, positionIds:$positions) { heroId position matchCount winCount } } }"""
-PAIR_QUERY = """query Pair($id:Short!,$brackets:[RankBracketBasicEnum!]) { heroStats { matchUp(heroId:$id, bracketBasicIds:$brackets) { heroId with { heroId1 heroId2 matchCount winCount } vs { heroId1 heroId2 matchCount winCount } } } }"""
+PAIR_QUERY = """query Pair($id:Short!,$brackets:[RankBracketBasicEnum!],$take:Int!) { heroStats { matchUp(heroId:$id, bracketBasicIds:$brackets, take:$take) { heroId with { heroId1 heroId2 matchCount winCount } vs { heroId1 heroId2 matchCount winCount } } } }"""
 
 
 def fetch_meta(hero_ids: list[int], role: str, bracket: str = DEFAULT_BRACKET) -> list[dict]:
@@ -105,7 +105,7 @@ def fetch_meta(hero_ids: list[int], role: str, bracket: str = DEFAULT_BRACKET) -
 
 
 def fetch_pairs(hero_id: int, bracket: str = DEFAULT_BRACKET) -> dict:
-    rows = execute(PAIR_QUERY, {"id": hero_id, "brackets": [bracket]})["heroStats"]["matchUp"]
+    rows = execute(PAIR_QUERY, {"id": hero_id, "brackets": [bracket], "take": 127})["heroStats"]["matchUp"]
     return rows[0] if rows else {"with": [], "vs": []}
 
 
