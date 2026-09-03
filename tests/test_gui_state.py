@@ -12,3 +12,9 @@ def test_draft_state_add_alias_remove_clear_and_recommendations():
 def test_gui_state_accepts_dark_seer_aliases(value):
  s=DraftState()
  assert s.add(value, 'enemy') == 'dark_seer'
+
+
+def test_draft_state_removes_hero_and_rejects_cross_team_duplicate():
+ s=DraftState(); assert s.add('sf', 'enemy') == 'shadow_fiend'
+ with pytest.raises(ValueError, match='already drafted'): s.add('sf', 'ally')
+ s.remove('shadow_fiend'); assert not s.enemies
