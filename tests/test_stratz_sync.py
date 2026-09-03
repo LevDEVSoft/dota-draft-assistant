@@ -77,7 +77,7 @@ def test_sync_batches_meta_paces_pairs_and_normalizes_all_pair_types(monkeypatch
     output = DATA_DIR / "generated" / "sync-test-snapshot.json"
     snapshot = stratz.sync("carry", output, heroes, DATA_DIR / "hero_id_map.json", pair_delay=0.3, sleeper=sleeps.append)
 
-    assert meta_calls == [([8], "carry", "HERALD_GUARDIAN")]
+    assert meta_calls == [([1, 2, 8], None, "HERALD_GUARDIAN"), ([8], "carry", "HERALD_GUARDIAN")]
     assert pair_calls == [(8, "HERALD_GUARDIAN")]
     assert sleeps == []
     assert json.loads(output.read_text()) == snapshot
