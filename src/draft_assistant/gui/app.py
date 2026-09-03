@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
 
 from draft_assistant.aliases import normalize_hero
 from draft_assistant.cli import format_explanation
+from .autocomplete import HeroAutocomplete
 from .animated_background import AnimatedBackground
 from .state import DraftState
 
@@ -66,7 +67,7 @@ class RecommendationCard(QWidget):
 
 class Window(QMainWindow):
     def __init__(self):
-        super().__init__(); self.state = DraftState(); self.animations = []
+        super().__init__(); self.state = DraftState(); self.animations = []; self.autocompleters = {}
         self.setWindowTitle("Dota Draft Assistant"); self.resize(720, 760); self.setMinimumSize(560, 620)
         self.setFont(QFont("Segoe UI", 10)); self.setStyleSheet(self.theme())
         self.background = AnimatedBackground(); self.background.setObjectName("root"); self.setCentralWidget(self.background)
@@ -98,6 +99,7 @@ class Window(QMainWindow):
         QFrame#heroChip { background:#27354c; border:1px solid #405777; border-radius:13px; } QLabel#chipLabel { color:#edf3ff; font-weight:600; }
         QToolButton#chipClose { color:#aebed8; border:0; border-radius:9px; font-size:16px; font-weight:700; min-width:18px; max-width:18px; min-height:18px; max-height:18px; padding:0; } QToolButton#chipClose:hover { background:#425b80; color:white; }
         QListWidget { background:#1b2230; border:1px solid #2b3548; border-radius:10px; padding:4px; outline:none; } QListWidget::item { border-radius:7px; margin:2px; } QListWidget::item:hover { background:#26354d; } QListWidget::item:selected { background:#304b73; }
+        QFrame#autocomplete { background:#1c2637; border:1px solid #5775a0; border-radius:8px; } QListWidget#autocompleteList { background:transparent; border:0; border-radius:5px; padding:0; } QListWidget#autocompleteList::item { padding:7px 10px; margin:0; } QListWidget#autocompleteList::item:selected { background:#35557f; } QListWidget#autocompleteList::item:hover { background:#2b4262; }
         QLabel#rank { color:#8fa9d0; font-family:Consolas; font-weight:700; } QLabel#recommendationName { color:#f2f5fb; font-size:12px; font-weight:600; } QLabel#score { color:#9bc4ff; font-family:Consolas; font-weight:700; }
         QPushButton { background:#29364a; border:1px solid #3b4c66; border-radius:7px; color:#edf2fa; min-height:30px; padding:3px 12px; font-weight:600; } QPushButton:hover { background:#354862; border-color:#5775a0; } QPushButton:pressed { background:#223046; } QPushButton#primaryButton { background:#416cad; border-color:#5d8ed9; } QPushButton#primaryButton:hover { background:#4d7cc4; }
         QLabel#explanation { color:#cdd7e7; padding:4px; } QLabel#status { color:#91a4c3; padding-left:3px; } QLabel#status[error="true"] { color:#ffaaa5; }
@@ -117,7 +119,13 @@ class Window(QMainWindow):
         heading = QLabel(title.upper()); heading.setObjectName("sectionTitle"); box.addWidget(heading)
         host = QWidget(); chips = FlowLayout(host); host.setLayout(chips); box.addWidget(host)
         input_box = QLineEdit(); input_box.setPlaceholderText("Type hero alias and press Enter"); input_box.returnPressed.connect(lambda: self.add_hero(input_box, side)); box.addWidget(input_box)
-        parent.addWidget(panel); return input_box, chips
+        parent.addWidget(panel)
+        self.autocompleters[input_box] = HeroAutocomplete(
+            input_box, self.state.heroes, self.state.aliases,
+            lambda: self.state.enemies if side == "enemy" else self.state.allies,
+            lambda hero_id: self.accept_suggestion(input_box, side, hero_id),
+        )
+        return input_box, chips
 
     def recommendations_panel(self):
         panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(12, 10, 12, 12); box.setSpacing(7)
@@ -140,7 +148,11 @@ class Window(QMainWindow):
         try: hero_id = self.state.add(input_box.text(), side)
         except ValueError as error:
             self.show_status(self.friendly_error(str(error), input_box, side), error=True); input_box.setFocus(); return
-        input_box.clear(); self.show_status(""); self.animate_chip(self.add_chip(hero_id, side), True); self.refresh(False); input_box.setFocus()
+        input_box.clear(); self.autocompleters[input_box].hide(); self.show_status(""); self.animate_chip(self.add_chip(hero_id, side), True); self.refresh(False); input_box.setFocus()
+
+    def accept_suggestion(self, input_box, side, hero_id):
+        input_box.setText(self.state.heroes[hero_id].display_name)
+        self.add_hero(input_box, side)
 
     def friendly_error(self, error, input_box, side):
         if error == "Hero is already drafted":

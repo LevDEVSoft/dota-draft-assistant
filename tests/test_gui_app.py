@@ -3,11 +3,14 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QToolButton
 
 from draft_assistant.gui.app import Window
 from draft_assistant.gui.animated_background import AnimatedBackground
+from draft_assistant.gui.autocomplete import ranked_suggestions
+from draft_assistant.gui.state import DraftState
 
 
 @pytest.fixture(scope="module")
@@ -71,3 +74,41 @@ def test_window_background_toggle_stops_and_starts_timer(app):
     assert not window.background.animation_enabled
     window.background_toggle.setChecked(True)
     assert window.background.animation_enabled
+
+
+@pytest.mark.parametrize(("query", "expected"), [
+    ("z", "zeus"), ("ze", "zeus"), ("ds", "dark_seer"),
+    ("dar", "dark_seer"), ("dw", "dark_willow"), ("db", "dawnbreaker"),
+    ("lc", "legion_commander"), ("DS", "dark_seer"),
+])
+def test_ranked_suggestions_use_shared_aliases_case_insensitively(query, expected):
+    state = DraftState()
+    assert ranked_suggestions(query, state.heroes, state.aliases)[0] == expected
+
+
+def test_exact_alias_is_ranked_before_weaker_name_match_and_selected_hero_is_hidden():
+    state = DraftState()
+    matches = ranked_suggestions("ds", state.heroes, state.aliases)
+    assert matches[0] == "dark_seer"
+    assert "dark_seer" not in ranked_suggestions("ds", state.heroes, state.aliases, ["dark_seer"])
+
+
+def test_autocomplete_enter_navigation_and_escape(app):
+    window = Window()
+    window.show()
+    window.enemy.setText("z")
+    assert window.autocompleters[window.enemy].popup.isVisible()
+    assert window.autocompleters[window.enemy].list.item(0).text() == "Zeus"
+    QTest.keyClick(window.enemy, Qt.Key.Key_Return)
+    assert window.state.enemies == ["zeus"]
+    assert not window.autocompleters[window.enemy].popup.isVisible()
+
+    window.ally.setText("d")
+    completer = window.autocompleters[window.ally]
+    assert completer.list.currentRow() == -1
+    QTest.keyClick(window.ally, Qt.Key.Key_Down)
+    first_row = completer.list.currentRow()
+    QTest.keyClick(window.ally, Qt.Key.Key_Down)
+    assert completer.list.currentRow() != first_row
+    QTest.keyClick(window.ally, Qt.Key.Key_Escape)
+    assert not completer.popup.isVisible()
