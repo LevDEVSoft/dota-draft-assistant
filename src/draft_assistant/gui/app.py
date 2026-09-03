@@ -104,6 +104,7 @@ class Window(QMainWindow):
         layout.addLayout(self.header())
         self.enemy, self.enemy_chips = self.team_section(layout, "Enemy heroes", "enemy")
         self.ally, self.ally_chips = self.team_section(layout, "Allied heroes", "ally")
+        layout.addWidget(self.role_plan_panel())
         layout.addWidget(self.recommendations_panel()); layout.addWidget(self.explanation())
         layout.addLayout(self.actions())
         self.status = QLabel(); self.status.setObjectName("status"); self.status.setMinimumHeight(20); layout.addWidget(self.status)
@@ -165,6 +166,13 @@ class Window(QMainWindow):
         panel = QFrame(); panel.setObjectName("recommendationPanel"); box = QVBoxLayout(panel); box.setContentsMargins(14, 11, 14, 12); box.setSpacing(5)
         heading = QHBoxLayout(); title = QLabel("RECOMMENDATIONS"); title.setObjectName("sectionTitle"); note = QLabel("Best available picks"); note.setObjectName("appSubtitle"); heading.addWidget(title); heading.addStretch(1); heading.addWidget(note); box.addLayout(heading)
         self.recs = QListWidget(); self.recs.setMinimumHeight(224); box.addWidget(self.recs); return panel
+
+    def role_plan_panel(self):
+        panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(13, 9, 13, 10); box.setSpacing(5)
+        title = QLabel("ROLES & GAME PLAN"); title.setObjectName("sectionTitle"); box.addWidget(title)
+        self.role_rows = QVBoxLayout(); self.role_rows.setSpacing(3); box.addLayout(self.role_rows)
+        self.game_plan = QLabel(); self.game_plan.setObjectName("appSubtitle"); self.game_plan.setWordWrap(True); box.addWidget(self.game_plan)
+        return panel
 
     def explanation(self):
         self.explanation_panel = QFrame(); self.explanation_panel.setObjectName("explanationPanel"); box = QVBoxLayout(self.explanation_panel); box.setContentsMargins(13, 9, 13, 10)
@@ -254,7 +262,30 @@ class Window(QMainWindow):
         for rank, recommendation in enumerate(self.current, 1):
             item = QListWidgetItem(); item.setSizeHint(QSize(0, 40)); self.recs.addItem(item); self.recs.setItemWidget(item, RecommendationCard(rank, recommendation))
         if rebuild: self.rebuild_chips()
+        self.refresh_role_plan()
         self.recs.setCurrentRow(0)
+    def refresh_role_plan(self):
+        while self.role_rows.count():
+            item=self.role_rows.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+        analysis=self.state.analysis
+        if not analysis:
+            self.game_plan.setText("Add allied heroes to inspect inferred roles and the local game plan."); return
+        profiles={p.hero_id:p for p in analysis.allied_profiles}
+        for assignment in analysis.allies:
+            row=QFrame(); layout=QHBoxLayout(row); layout.setContentsMargins(0,0,0,0); layout.setSpacing(7)
+            hero=QLabel(self.state.heroes[assignment.hero_id].display_name); hero.setMinimumWidth(118)
+            position=QComboBox(); position.addItems([f"P{x}" for x in range(1,6)]); position.setCurrentText(f"P{assignment.position}"); position.setMaximumWidth(58)
+            position.currentIndexChanged.connect(lambda index, hero_id=assignment.hero_id: self.change_position(hero_id,index+1))
+            profile=profiles[assignment.hero_id]; confidence="Manual" if assignment.manual else ("High" if assignment.confidence>=.8 else "Medium")
+            detail=QLabel(f"{confidence} · {', '.join(profile.archetypes)}"); detail.setObjectName("appSubtitle")
+            layout.addWidget(hero); layout.addWidget(position); layout.addWidget(detail,1); self.role_rows.addWidget(row)
+        timing=lambda curve: ("early" if max(range(5),key=lambda i:curve[i])<2 else "mid game" if max(range(5),key=lambda i:curve[i])<3 else "late game")
+        threats=" · ".join(x.replace("_"," ") for x in analysis.threats[:3]) or "none identified"
+        needs=" · ".join(analysis.needs[:3]) or "balanced"
+        self.game_plan.setText(f"Allied timing: likely {timing(analysis.allied_curve)} · Enemy timing: likely {timing(analysis.enemy_curve)}\nThreats: {threats} · Team needs: {needs}")
+    def change_position(self, hero_id, position):
+        self.state.set_position(hero_id, position); self.refresh()
     def toggle_explanation(self):
         if self.explanation_panel.isVisible(): self.explanation_panel.setVisible(False); self.explain_button.setText("Explain selected")
         else: self.show_explain()

@@ -126,3 +126,10 @@ def test_screen_detection_off_keeps_manual_flow_and_auto_reports_calibration(app
     assert window.state.draft().enemies == ("shadow_fiend",)
     assert window.state.draft().allies == ("zeus",)
     assert window.status.text() == "Dota detected · 1 picks"
+
+
+def test_role_selector_updates_game_plan_without_breaking_gui(app):
+    window=Window(); window.show(); add(window,'pudge','ally'); add(window,'ancient_apparition','ally')
+    assert window.role_rows.count()==2 and 'Allied timing:' in window.game_plan.text()
+    window.change_position('pudge',2)
+    assert next(a for a in window.state.role_assignments if a.hero_id=='pudge').position==2
