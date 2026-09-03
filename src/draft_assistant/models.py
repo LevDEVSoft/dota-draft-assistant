@@ -29,6 +29,8 @@ class ScoreBreakdown:
     role_source: str = "hero-data"
     matchup_sources: tuple[tuple[str, str], ...] = ()
     synergy_sources: tuple[tuple[str, str], ...] = ()
+    pos1_matches: int = 0
+    position_confidence: float = 0.0
 
     @property
     def matchups(self) -> float:

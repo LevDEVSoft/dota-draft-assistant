@@ -19,6 +19,7 @@ def format_explanation(item, heroes: dict) -> str:
     lines = [f"{item.hero.display_name} {item.score:.1f}", ""]
     lines.append(f"  base: {item.breakdown.base:+.1f} [{item.breakdown.base_source}]")
     lines.append(f"  role: {item.breakdown.role:+.1f} [{item.breakdown.role_source}]")
+    lines.append(f"  pos1 sample: {item.breakdown.pos1_matches}\n  pos1 confidence: {item.breakdown.position_confidence:.3f}")
     for enemy, score in item.breakdown.matchup_contributions:
         if score:
             lines.append(f"  vs {_display(enemy, heroes)}: {score:+.1f} [{dict(item.breakdown.matchup_sources).get(enemy, 'manual')}]")
