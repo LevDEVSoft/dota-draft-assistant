@@ -3,11 +3,11 @@ import html
 import sys
 
 from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, QSize, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
     QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLayout, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QPushButton, QSizePolicy,
-    QToolButton, QTextBrowser, QVBoxLayout, QWidget)
+    QSplitter, QTabWidget, QToolButton, QTextBrowser, QVBoxLayout, QWidget)
 
 from draft_assistant.aliases import normalize_hero
 from draft_assistant.screen_detection import DetectionPoller, TemporalStabilizer
@@ -15,6 +15,7 @@ from draft_assistant.item_knowledge import ITEMS
 from .autocomplete import HeroAutocomplete
 from .animated_background import AnimatedBackground
 from .state import DraftState
+from .native_hotkey import WindowsHotkey
 
 
 class FlowLayout(QLayout):
@@ -98,24 +99,32 @@ class Window(QMainWindow):
         self.detection_poller = DetectionPoller(parent=self)
         self.detection_poller.result.connect(self.apply_detected_result)
         self.detection_poller.status.connect(lambda message: self.show_status(message))
-        self.setWindowTitle("Dota Draft Assistant"); self.resize(720, 760); self.setMinimumSize(560, 620)
+        self.compact_overlay = False; self.full_geometry = None; self.overlay_geometry = None
+        self.setWindowTitle("Dota Draft Assistant"); self.resize(1040, 700); self.setMinimumSize(620, 460)
         self.setFont(QFont("Segoe UI", 10)); self.setStyleSheet(self.theme())
         self.background = AnimatedBackground(); self.background.setObjectName("root"); self.setCentralWidget(self.background)
-        content = QWidget(); content.setObjectName("content")
-        root_layout = QVBoxLayout(self.background); root_layout.setContentsMargins(0, 0, 0, 0); root_layout.addWidget(content)
-        layout = QVBoxLayout(content); layout.setContentsMargins(18, 16, 18, 16); layout.setSpacing(12)
+        self.content = QWidget(); self.content.setObjectName("content")
+        root_layout = QVBoxLayout(self.background); root_layout.setContentsMargins(0, 0, 0, 0); root_layout.addWidget(self.content)
+        layout = QVBoxLayout(self.content); layout.setContentsMargins(18, 16, 18, 16); layout.setSpacing(10)
         layout.addLayout(self.header())
         self.enemy, self.enemy_chips = self.team_section(layout, "Enemy heroes", "enemy")
         self.ally, self.ally_chips = self.team_section(layout, "Allied heroes", "ally")
-        layout.addWidget(self.role_plan_panel())
-        layout.addWidget(self.item_panel())
-        layout.addWidget(self.recommendations_panel()); layout.addWidget(self.explanation())
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal); self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.addWidget(self.recommendations_panel())
+        self.detail_tabs = QTabWidget(); self.detail_tabs.setObjectName("detailTabs")
+        self.detail_tabs.addTab(self.explanation(), "Breakdown")
+        self.detail_tabs.addTab(self.item_panel(), "Items")
+        self.detail_tabs.addTab(self.role_plan_panel(), "Team / Game Plan")
+        self.main_splitter.addWidget(self.detail_tabs); self.main_splitter.setSizes([590, 390]); layout.addWidget(self.main_splitter, 1)
         layout.addLayout(self.actions())
         self.status = QLabel(); self.status.setObjectName("status"); self.status.setMinimumHeight(20); layout.addWidget(self.status)
         self.role.currentTextChanged.connect(self.refresh); self.mode.currentTextChanged.connect(self.refresh); self.count.currentTextChanged.connect(self.refresh)
         self.pin.toggled.connect(self.set_always_on_top); self.clear_button.clicked.connect(self.clear_draft)
         self.save_button.clicked.connect(lambda: self.show_status("Draft saving is not configured yet."))
-        self.explain_button.clicked.connect(self.toggle_explanation); self.recs.itemSelectionChanged.connect(self.update_explanation)
+        self.explain_button.clicked.connect(self.show_explain); self.recs.itemSelectionChanged.connect(self.update_explanation)
+        self.overlay_toggle.toggled.connect(self.set_overlay_mode)
+        QShortcut(QKeySequence("Ctrl+1"), self, activated=self.enemy.setFocus); QShortcut(QKeySequence("Ctrl+2"), self, activated=self.ally.setFocus)
+        self.hotkey = WindowsHotkey(self); self.hotkey.activated.connect(self.activate_overlay)
         self.refresh()
 
     @staticmethod
@@ -148,10 +157,10 @@ class Window(QMainWindow):
         self.role = QComboBox(); self.role.addItems(["carry", "mid", "offlane", "support", "hard_support"])
         self.mode = QComboBox(); self.mode.addItems(["manual", "stats", "hybrid"]); self.mode.setCurrentText("hybrid")
         self.count = QComboBox(); self.count.addItems(["3", "5", "10"]); self.count.setCurrentText("5")
-        self.pin = QCheckBox("Always on top")
+        self.pin = QCheckBox("Always on top"); self.overlay_toggle = QCheckBox("Overlay")
         for label, control in (("ROLE", self.role), ("MODE", self.mode), ("SHOW", self.count)):
             group = QVBoxLayout(); group.setSpacing(2); caption = QLabel(label); caption.setObjectName("controlLabel"); group.addWidget(caption); group.addWidget(control); controls.addLayout(group)
-        controls.addWidget(self.pin); row.addWidget(strip); return row
+        controls.addWidget(self.pin); controls.addWidget(self.overlay_toggle); row.addWidget(strip); return row
 
     def team_section(self, parent, title, side):
         panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(13, 9, 13, 10); box.setSpacing(6)
@@ -169,7 +178,7 @@ class Window(QMainWindow):
     def recommendations_panel(self):
         panel = QFrame(); panel.setObjectName("recommendationPanel"); box = QVBoxLayout(panel); box.setContentsMargins(14, 11, 14, 12); box.setSpacing(5)
         heading = QHBoxLayout(); title = QLabel("RECOMMENDATIONS"); title.setObjectName("sectionTitle"); note = QLabel("Best available picks"); note.setObjectName("appSubtitle"); heading.addWidget(title); heading.addStretch(1); heading.addWidget(note); box.addLayout(heading)
-        self.recs = QListWidget(); self.recs.setMinimumHeight(224); box.addWidget(self.recs); return panel
+        self.recs = QListWidget(); self.recs.setMinimumHeight(180); self.recs.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded); self.recs.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); box.addWidget(self.recs); return panel
 
     def role_plan_panel(self):
         panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(13, 9, 13, 10); box.setSpacing(5)
@@ -182,23 +191,23 @@ class Window(QMainWindow):
         panel=QFrame(); panel.setObjectName("panel"); box=QVBoxLayout(panel); box.setContentsMargins(13,9,13,10); box.setSpacing(5)
         title=QLabel("ITEM OPTIONS"); title.setObjectName("sectionTitle"); box.addWidget(title)
         row=QHBoxLayout(); self.player=QComboBox(); self.player.currentIndexChanged.connect(self.change_player); self.item_input=QLineEdit(); self.item_input.setPlaceholderText("Add owned item"); self.item_input.returnPressed.connect(self.add_owned_item); row.addWidget(self.player); row.addWidget(self.item_input,1); box.addLayout(row)
-        self.item_list=QListWidget(); self.item_list.setMaximumHeight(122); self.item_list.itemSelectionChanged.connect(self.show_item_detail); box.addWidget(self.item_list)
+        self.item_list=QListWidget(); self.item_list.setMinimumHeight(130); self.item_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); self.item_list.itemSelectionChanged.connect(self.show_item_detail); box.addWidget(self.item_list,1)
         self.item_detail=QLabel(); self.item_detail.setObjectName("appSubtitle"); self.item_detail.setWordWrap(True); box.addWidget(self.item_detail)
         return panel
 
     def explanation(self):
         self.explanation_panel = QFrame(); self.explanation_panel.setObjectName("explanationPanel"); box = QVBoxLayout(self.explanation_panel); box.setContentsMargins(13, 9, 13, 10)
-        heading = QLabel("SCORE BREAKDOWN"); heading.setObjectName("sectionTitle"); self.detail = QTextBrowser(); self.detail.setObjectName("explanation"); self.detail.setOpenExternalLinks(False); self.detail.setMinimumHeight(118)
-        box.addWidget(heading); box.addWidget(self.detail); self.explanation_panel.setVisible(False); return self.explanation_panel
+        heading = QLabel("SCORE BREAKDOWN"); heading.setObjectName("sectionTitle"); self.detail = QTextBrowser(); self.detail.setObjectName("explanation"); self.detail.setOpenExternalLinks(False); self.detail.setMinimumHeight(118); self.detail.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        box.addWidget(heading); box.addWidget(self.detail,1); return self.explanation_panel
 
     def actions(self):
-        row = QHBoxLayout(); self.explain_button = QPushButton("Explain selected"); self.explain_button.setObjectName("primaryButton")
+        row = QHBoxLayout(); self.explain_button = QPushButton("Show breakdown"); self.explain_button.setObjectName("primaryButton")
         self.clear_button = QPushButton("Clear"); self.clear_button.setObjectName("quietButton"); self.save_button = QPushButton("Save"); self.save_button.setObjectName("quietButton")
         self.background_toggle = QCheckBox("Animated background"); self.background_toggle.setChecked(True)
         self.background_toggle.toggled.connect(self.background.set_animation_enabled)
         self.screen_detection = QComboBox(); self.screen_detection.addItems(["Screen detection: OFF", "Screen detection: AUTO"])
         self.screen_detection.currentIndexChanged.connect(self.set_detection_mode)
-        row.addWidget(self.explain_button); row.addStretch(1); row.addWidget(self.screen_detection); row.addWidget(self.background_toggle); row.addWidget(self.clear_button); row.addWidget(self.save_button); return row
+        row.addWidget(self.explain_button); row.addStretch(1); row.addWidget(self.screen_detection); row.addWidget(self.background_toggle); row.addWidget(self.clear_button); row.addWidget(self.save_button); self.action_row=row; return row
 
     def add_hero(self, input_box, side):
         try: hero_id = self.state.add(input_box.text(), side)
@@ -255,7 +264,34 @@ class Window(QMainWindow):
             if finished: finished()
         fade.finished.connect(done); self.animations.extend((fade, grow)); fade.start(); grow.start()
 
-    def set_always_on_top(self, enabled): self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, enabled); self.show()
+    def set_always_on_top(self, enabled):
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, enabled); self.show(); self.raise_()
+
+    def set_overlay_mode(self, enabled):
+        if enabled == self.compact_overlay: return
+        self.compact_overlay = enabled
+        if enabled:
+            self.full_geometry = self.saveGeometry(); self.detail_tabs.hide(); self.screen_detection.hide(); self.background_toggle.hide(); self.save_button.hide(); self.explain_button.hide()
+            self.setMinimumSize(420, 340); self.resize(480, 570)
+            self.show_status("Overlay works best with Dota in Borderless Window mode.")
+        else:
+            self.overlay_geometry = self.saveGeometry(); self.detail_tabs.show(); self.screen_detection.show(); self.background_toggle.show(); self.save_button.show(); self.explain_button.show()
+            self.setMinimumSize(620, 460)
+            if self.full_geometry: self.restoreGeometry(self.full_geometry)
+        self.enemy.setFocus()
+
+    def activate_overlay(self):
+        self.showNormal(); self.show(); self.raise_(); self.activateWindow()
+        (self.enemy if not self.enemy.text() else self.ally).setFocus()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.compact_overlay:
+            if any(completer.popup.isVisible() for completer in self.autocompleters.values()):
+                for completer in self.autocompleters.values(): completer.hide()
+            else:
+                self.hide()
+            event.accept(); return
+        super().keyPressEvent(event)
     def configure_screen_detection(self, capture, detector, stabilizer=None):
         self.detection_poller.capture = capture; self.detection_poller.detector = detector
         self.detection_poller.stabilizer = stabilizer or TemporalStabilizer()
@@ -269,20 +305,23 @@ class Window(QMainWindow):
         count = len(result.allied_picks) + len(result.enemy_picks)
         self.show_status(f"Dota detected · {count} picks" if count else "Waiting for draft screen")
     def refresh(self, rebuild=True):
+        selected_id = self.current[self.recs.currentRow()].hero.id if hasattr(self, "current") and 0 <= self.recs.currentRow() < len(self.current) else None
         self.state.role, self.state.mode, self.state.top = self.role.currentText(), self.mode.currentText(), int(self.count.currentText())
         self.current = self.state.recommendations(); self.recs.clear()
         for rank, recommendation in enumerate(self.current, 1):
             item = QListWidgetItem(); item.setSizeHint(QSize(0, 40)); self.recs.addItem(item); self.recs.setItemWidget(item, RecommendationCard(rank, recommendation))
         if rebuild: self.rebuild_chips()
         self.refresh_role_plan()
-        self.recs.setCurrentRow(0)
+        selected_row = next((index for index, item in enumerate(self.current) if item.hero.id == selected_id), 0)
+        self.recs.setCurrentRow(selected_row)
     def refresh_role_plan(self):
         while self.role_rows.count():
             item=self.role_rows.takeAt(0)
             if item.widget(): item.widget().deleteLater()
         analysis=self.state.analysis
         if not analysis:
-            self.game_plan.setText("Add allied heroes to inspect inferred roles and the local game plan."); return
+            self.game_plan.setText("Add allied heroes to inspect inferred roles and the local game plan.")
+            self.player.blockSignals(True); self.player.clear(); self.player.blockSignals(False); self.refresh_items(); return
         profiles={p.hero_id:p for p in analysis.allied_profiles}
         for assignment in analysis.allies:
             row=QFrame(); layout=QHBoxLayout(row); layout.setContentsMargins(0,0,0,0); layout.setSpacing(7)
@@ -313,6 +352,8 @@ class Window(QMainWindow):
         else: self.show_status("Unknown item",True)
     def refresh_items(self):
         self.item_list.clear(); scores=self.state.item_scores()
+        if not self.state.selected_player:
+            self.item_detail.setText("Select an allied hero to view item options."); return
         for score in scores[:6]:
             spec=ITEMS[score.item_id]; item=QListWidgetItem(f"{spec.display_name}  {score.total:+.1f}"); item.setData(Qt.ItemDataRole.UserRole,score); self.item_list.addItem(item)
         owned=", ".join(ITEMS[x].display_name for x in self.state.inventories.get(self.state.selected_player,[])) or "No owned items"
@@ -322,17 +363,19 @@ class Window(QMainWindow):
         if item:
             score=item.data(Qt.ItemDataRole.UserRole); self.item_detail.setText(" · ".join((f"Matchup {score.matchup:+.1f}",f"Need {score.team_need:+.1f}",f"Role fit {score.role_fit:+.1f}",f"Redundancy {-score.redundancy:+.1f}",f"Poor fit {-score.poor_fit:+.1f}")))
     def toggle_explanation(self):
-        if self.explanation_panel.isVisible(): self.explanation_panel.setVisible(False); self.explain_button.setText("Explain selected")
-        else: self.show_explain()
+        self.detail_tabs.setVisible(not self.detail_tabs.isVisible())
+        if self.detail_tabs.isVisible(): self.show_explain()
     def show_explain(self):
-        self.explanation_panel.setVisible(True); self.explain_button.setText("Hide explanation")
-        self.update_explanation()
+        self.detail_tabs.show(); self.detail_tabs.setCurrentWidget(self.explanation_panel); self.update_explanation()
     def update_explanation(self):
         row = self.recs.currentRow()
         if 0 <= row < len(self.current):
             self.detail.setHtml(explanation_html(self.current[row], self.state.heroes))
     def clear_draft(self):
-        self.state.clear(); self.explanation_panel.setVisible(False); self.explain_button.setText("Explain selected"); self.show_status(""); self.refresh(); self.enemy.setFocus()
+        self.state.clear(); self.show_status(""); self.refresh(); self.enemy.setFocus()
+
+    def closeEvent(self, event):
+        self.hotkey.close(); super().closeEvent(event)
 
 
 def main():

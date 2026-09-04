@@ -133,3 +133,25 @@ def test_role_selector_updates_game_plan_without_breaking_gui(app):
     assert window.role_rows.count()==2 and 'Allied timing:' in window.game_plan.text()
     window.change_position('pudge',2)
     assert next(a for a in window.state.role_assignments if a.hero_id=='pudge').position==2
+
+
+def test_refresh_preserves_selected_recommendation_and_overlay_keeps_draft(app):
+    window = Window(); window.show()
+    window.recs.setCurrentRow(2); selected = window.current[2].hero.id
+    add(window, "sf", "enemy")
+    if any(item.hero.id == selected for item in window.current):
+        assert window.current[window.recs.currentRow()].hero.id == selected
+    window.overlay_toggle.setChecked(True)
+    assert window.compact_overlay and not window.detail_tabs.isVisible()
+    assert window.state.enemies == ["shadow_fiend"]
+    window.overlay_toggle.setChecked(False)
+    assert not window.compact_overlay and window.detail_tabs.isVisible()
+
+
+def test_role_and_top_changes_refresh_recommendations_immediately(app):
+    window = Window(); window.show(); before = [item.hero.id for item in window.current]
+    window.count.setCurrentText("10")
+    assert len(window.current) == 10
+    window.role.setCurrentText("offlane")
+    assert all("offlane" in item.hero.roles for item in window.current)
+    assert [item.hero.id for item in window.current] != before
