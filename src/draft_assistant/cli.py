@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sync-opendota", action="store_true", help="fetch a local OpenDota Herald/Guardian meta snapshot")
     parser.add_argument("--window", choices=("week", "month", "year"), default="month", help="DOTABUFF time window (default: month)")
     parser.add_argument("--profile-status", action="store_true", help="show linked Steam profile status")
+    parser.add_argument("--profile-probe", action="store_true", help="run the small read-only STRATZ probe for the linked Steam profile")
     args = parser.parse_args(argv)
     try:
         heroes, matchups, synergies = load_data()
@@ -69,12 +70,20 @@ def main(argv: list[str] | None = None) -> int:
             from .data_sources.stratz import probe_player_access
             profile = default_store().save(login().steam_id64)
             probe = probe_player_access(profile.steam_id64)
-            print(f"Steam connected: {profile.steam_id64}\nSTRATZ player: {'available' if probe.player_available else 'unavailable'}\nRecent matches: {'available' if probe.recent_matches_available else 'unavailable'}\nVisible recent match count: {probe.visible_match_count}\nPrivate-history access: {probe.private_history_access}" + (f"\nReason: {probe.reason}" if probe.reason else ""))
+            print(f"Steam connected: {profile.steam_id64}\nSTRATZ player account ID: {probe.steam_account_id}\nSTRATZ player: {'available' if probe.player_available else 'unavailable'}\nMatch query accepted: {'YES' if probe.match_query_accepted else 'NO'}\nRecent matches: {'available' if probe.recent_matches_available else 'zero returned'}\nVisible recent match count: {probe.visible_match_count}\nAggregate match count: {probe.total_match_count}\nExplicit privacy/permission error: {'YES' if probe.explicit_privacy_error else 'NO'}\nPrivate-history access: {probe.private_history_access}" + (f"\nReason: {probe.reason}" if probe.reason else ""))
             return 0
         if args.profile_status:
             from .profile.profile_state import default_store
             profile = default_store().load()
             print(f"Steam profile: {profile.steam_id64 if profile else 'not connected'}")
+            return 0
+        if args.profile_probe:
+            from .profile.profile_state import default_store
+            from .data_sources.stratz import probe_player_access
+            profile = default_store().load()
+            if not profile: raise ValueError("No linked Steam profile")
+            probe = probe_player_access(profile.steam_id64)
+            print(f"SteamID64: {profile.steam_id64}\nSTRATZ player account ID: {probe.steam_account_id}\nPlayer resolved: {'YES' if probe.player_available else 'NO'}\nMatch query accepted: {'YES' if probe.match_query_accepted else 'NO'}\nMatch nodes returned: {probe.visible_match_count}\nAggregate match count: {probe.total_match_count}\nExplicit privacy/permission error: {'YES' if probe.explicit_privacy_error else 'NO'}\nPrivate-history access: {probe.private_history_access}" + (f"\nCause: {probe.reason}" if probe.reason else ""))
             return 0
         if args.sync_stats:
             from .data_sources.stratz import build_sync_plan, sync

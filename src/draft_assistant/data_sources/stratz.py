@@ -41,9 +41,13 @@ class StratzRateLimitError(StratzError):
 
 @dataclass(frozen=True)
 class PlayerAccessProbe:
+    steam_account_id: int | None
     player_available: bool
+    match_query_accepted: bool
     recent_matches_available: bool
     visible_match_count: int
+    total_match_count: int | None
+    explicit_privacy_error: bool
     private_history_access: str
     reason: str | None = None
 
@@ -54,19 +58,20 @@ def probe_player_access(steam_id64: str) -> PlayerAccessProbe:
         account_id = int(steam_id64) - 76561197960265728
         if account_id <= 0: raise ValueError
     except (TypeError, ValueError):
-        return PlayerAccessProbe(False, False, 0, "UNKNOWN", "invalid SteamID64")
-    query = """query PlayerProbe($id:Long!) { player(steamAccountId:$id) { steamAccountId matchCount lastMatchDate matches(request:{take:5}) { id startDateTime durationSeconds isStats } } }"""
+        return PlayerAccessProbe(None, False, False, False, 0, None, False, "UNKNOWN", "invalid SteamID64")
+    query = """query PlayerProbe($id:Long!) { player(steamAccountId:$id) { steamAccountId matchCount lastMatchDate matches(request:{take:5 skip:0 playerList:SINGLE orderBy:DESC}) { id startDateTime durationSeconds isStats } } }"""
     try:
         player = execute(query, {"id": account_id}).get("player")
     except StratzError as error:
-        return PlayerAccessProbe(False, False, 0, "UNKNOWN", str(error).replace(token() if os.environ.get("STRATZ_API_TOKEN") else "", "[redacted]"))
+        return PlayerAccessProbe(account_id, False, False, False, 0, None, False, "UNKNOWN", str(error).replace(token() if os.environ.get("STRATZ_API_TOKEN") else "", "[redacted]"))
     if not player:
-        return PlayerAccessProbe(False, False, 0, "UNKNOWN", "player unavailable")
+        return PlayerAccessProbe(account_id, False, True, False, 0, None, False, "UNKNOWN", "player unavailable")
     matches = player.get("matches")
     if matches is None:
-        return PlayerAccessProbe(True, False, 0, "UNKNOWN", "recent matches unavailable or private")
+        return PlayerAccessProbe(account_id, True, True, False, 0, player.get("matchCount"), True, "UNKNOWN", "recent matches unavailable or privacy-restricted")
     count = len(matches)
-    return PlayerAccessProbe(True, True, count, "YES" if count else "UNKNOWN", None if count else "no recent matches visible")
+    reason = None if count else "zero match nodes returned; no explicit privacy error"
+    return PlayerAccessProbe(account_id, True, True, bool(count), count, player.get("matchCount"), False, "YES" if count else "UNKNOWN", reason)
 
 
 @dataclass(frozen=True)

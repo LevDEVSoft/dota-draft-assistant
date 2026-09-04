@@ -36,7 +36,7 @@ def test_probe_result_is_explicit_and_safe(monkeypatch):
     from draft_assistant.data_sources import stratz
     monkeypatch.setattr(stratz, "execute", lambda *_: {"player": {"matches": [{"id": 1}]}})
     result=stratz.probe_player_access("76561198000000000")
-    assert result == PlayerAccessProbe(True, True, 1, "YES", None)
+    assert result == PlayerAccessProbe(39734272, True, True, True, 1, None, False, "YES", None)
     monkeypatch.setattr(stratz, "execute", lambda *_: (_ for _ in ()).throw(stratz.StratzError("denied test-token")))
     monkeypatch.setattr(stratz, "token", lambda: "test-token")
     assert "test-token" not in stratz.probe_player_access("76561198000000000").reason
