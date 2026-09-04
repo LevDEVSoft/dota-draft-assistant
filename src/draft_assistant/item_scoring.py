@@ -16,7 +16,7 @@ def score_items(model, profile, inventory):
  if profile.frontline: signals.add("frontliner")
  if profile.damage: signals.add("right_click core")
  for spec in ITEMS.values():
-  if spec.item_id in inventory.owned_items: continue
+  if not spec.recommendable or spec.item_id in inventory.owned_items: continue
   matchup=sum(1.6 for t in model.threats if spec.tags & COUNTERS.get(t,set()))
   need=sum(1.3 for n in model.needs if spec.tags & NEEDS.get(n,set()))
   fit=1.5 if spec.compatible & signals else 0

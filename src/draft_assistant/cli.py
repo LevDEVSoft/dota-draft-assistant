@@ -9,6 +9,9 @@ from .data_sources.stratz import StratzError
 from .heroes import load_data, parse_draft
 from .validation import validate_aliases
 from .scoring import recommend
+from .item_knowledge import ITEMS
+from .item_aliases import build_aliases as build_item_aliases
+from .item_graph import validate_graph
 
 
 def _display(hero_id: str, heroes: dict) -> str:
@@ -47,8 +50,9 @@ def main(argv: list[str] | None = None) -> int:
         heroes, matchups, synergies = load_data()
         aliases = build_aliases(heroes)
         validate_aliases(aliases, set(heroes))
+        item_aliases=build_item_aliases(); edges=validate_graph()
         if args.validate_data:
-            print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}\nMatchups: {sum(len(values) for values in matchups.values())}\nSynergies: {len(synergies)}")
+            print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}\nItems: {len(ITEMS)}\nRecommendable items: {sum(x.recommendable for x in ITEMS.values())}\nItem aliases: {len(item_aliases)}\nUpgrade edges: {len(edges)}\nMatchups: {sum(len(values) for values in matchups.values())}\nSynergies: {len(synergies)}")
             return 0
         if args.sync_stats:
             from .data_sources.stratz import build_sync_plan, sync

@@ -1,9 +1,11 @@
 """Canonical local item definitions for role-aware scoring."""
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 @dataclass(frozen=True)
 class Item:
-    item_id:str; display_name:str; cost:int; category:str; tags:frozenset[str]; compatible:frozenset[str]; situational:bool=False
+    item_id:str; display_name:str; cost:int; category:str; tags:frozenset[str]; compatible:frozenset[str]; situational:bool=False; numeric_id:int=0; components:tuple[str,...]=(); recommendable:bool=True
 
 def item(item_id,name,cost,category,tags,compatible,situational=False): return Item(item_id,name,cost,category,frozenset(tags),frozenset(compatible),situational)
 
@@ -27,6 +29,14 @@ ITEMS={x.item_id:x for x in (
  item("aghanims_scepter","Aghanim's Scepter",4200,"upgrade",("burst","utility"),("carry","mid","offlane","support","caster core"),True),
  item("aghanims_shard","Aghanim's Shard",1400,"upgrade",("utility",),("carry","mid","offlane","support","caster core"),True),
 )}
+
+# Mechanically reconciled from OpenDota dotaconstants (see data/items_catalog.json).
+_catalog=json.loads((Path(__file__).resolve().parents[2]/"data"/"items_catalog.json").read_text(encoding="utf8"))["items"]
+for _id,_row in _catalog.items():
+    if _id in ITEMS:
+        _old=ITEMS[_id]; ITEMS[_id]=Item(_old.item_id,_old.display_name,_row["cost"],_old.category,_old.tags,_old.compatible,_old.situational,_row["id"],tuple(_row["components"]),_row["recommendable"])
+    else:
+        ITEMS[_id]=Item(_id,_row["name"],_row["cost"],"utility",frozenset(),frozenset(),False,_row["id"],tuple(_row["components"]),_row["recommendable"])
 
 COUNTERS={"passive_dependence":{"Break","anti_passive"},"healing_regeneration":{"anti_heal","anti_regen"},"evasion":{"accuracy","anti_evasion"},"magical_damage":{"magic_mitigation","spell_immunity"},"burst":{"spell_immunity","save"},"physical_damage":{"armor","physical_mitigation"},"summons":{"anti_summon","physical_mitigation"},"illusions":{"anti_illusion","teamfight"}}
 NEEDS={"initiation":{"initiation","mobility"},"frontline":{"frontline","physical_mitigation"},"save":{"save","dispel"},"catch":{"catch","disable"},"waveclear":{"teamfight"},"anti_heal":{"anti_heal"},"Break":{"Break","anti_passive"}}
