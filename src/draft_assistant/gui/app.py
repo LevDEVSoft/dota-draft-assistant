@@ -74,17 +74,19 @@ def explanation_html(item, heroes):
     synergy_sources = dict(breakdown.synergy_sources)
     reasons = []
     for enemy, score in breakdown.matchup_contributions:
-        if score:
-            reasons.append(f"<li><b>vs {html.escape(heroes.get(enemy).display_name if enemy in heroes else enemy.title())}</b><span>{score:+.1f} · {html.escape(matchup_sources.get(enemy, 'manual'))}</span></li>")
+        source = matchup_sources.get(enemy, "unavailable")
+        detail = "data unavailable" + (" for selected role" if source == "unavailable-role" else "") if source.startswith("unavailable") else f"{score:+.1f} · {source}"
+        reasons.append(f"<li><b>vs {html.escape(heroes.get(enemy).display_name if enemy in heroes else enemy.title())}</b><span>{html.escape(detail)}</span></li>")
     synergies = []
     for ally, score in breakdown.synergy_contributions:
-        if score:
-            synergies.append(f"<li><b>with {html.escape(heroes.get(ally).display_name if ally in heroes else ally.title())}</b><span>{score:+.1f} · {html.escape(synergy_sources.get(ally, 'manual'))}</span></li>")
+        source = synergy_sources.get(ally, "unavailable")
+        detail = "data unavailable" + (" for selected role" if source == "unavailable-role" else "") if source.startswith("unavailable") else f"{score:+.1f} · {source}"
+        synergies.append(f"<li><b>with {html.escape(heroes.get(ally).display_name if ally in heroes else ally.title())}</b><span>{html.escape(detail)}</span></li>")
     return f"""
     <style>body{{font-family:'Segoe UI';color:#d7e1ef;margin:0}}h2{{color:#f4f7fc;margin:0;font-size:17px}}.score{{color:#aacdff;font-size:17px;font-weight:700;float:right}}.summary{{color:#9fb0c8;margin:5px 0 8px}}.pill{{background:#263a55;color:#cde0fa;border-radius:8px;padding:3px 7px;margin-right:5px}}h3{{color:#91add4;font-size:10px;letter-spacing:1px;margin:10px 0 3px}}ul{{margin:0;padding-left:15px}}li{{margin:2px 0}}li span{{color:#91a7c4;float:right}}</style>
     <h2>{html.escape(item.hero.display_name)} <span class='score'>{item.score:+.1f}</span></h2>
     <div class='summary'><span class='pill'>Base {breakdown.base:+.1f} · {html.escape(breakdown.base_source)}</span><span class='pill'>Role {breakdown.role:+.1f} · {html.escape(breakdown.role_source)}</span></div>
-    <div class='summary'>Position 1 sample: {breakdown.pos1_matches:,} · confidence: {breakdown.position_confidence:.3f} · total: <b>{breakdown.total:+.1f}</b></div>
+    <div class='summary'>{html.escape(breakdown.position_label)} sample: {breakdown.pos1_matches:,} · confidence: {breakdown.position_confidence:.3f} · total: <b>{breakdown.total:+.1f}</b></div>
     {"<h3>MATCHUPS</h3><ul>" + "".join(reasons) + "</ul>" if reasons else ""}
     {"<h3>SYNERGY</h3><ul>" + "".join(synergies) + "</ul>" if synergies else ""}
     """

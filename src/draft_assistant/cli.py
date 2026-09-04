@@ -22,13 +22,21 @@ def format_explanation(item, heroes: dict) -> str:
     lines = [f"{item.hero.display_name} {item.score:.1f}", ""]
     lines.append(f"  base: {item.breakdown.base:+.1f} [{item.breakdown.base_source}]")
     lines.append(f"  role: {item.breakdown.role:+.1f} [{item.breakdown.role_source}]")
-    lines.append(f"  pos1 sample: {item.breakdown.pos1_matches}\n  pos1 confidence: {item.breakdown.position_confidence:.3f}")
+    lines.append(f"  {item.breakdown.position_label} sample: {item.breakdown.pos1_matches}\n  {item.breakdown.position_label} confidence: {item.breakdown.position_confidence:.3f}")
     for enemy, score in item.breakdown.matchup_contributions:
-        if score:
-            lines.append(f"  vs {_display(enemy, heroes)}: {score:+.1f} [{dict(item.breakdown.matchup_sources).get(enemy, 'manual')}]")
+        source = dict(item.breakdown.matchup_sources).get(enemy, "unavailable")
+        if source.startswith("unavailable"):
+            suffix = " for selected role" if source == "unavailable-role" else ""
+            lines.append(f"  vs {_display(enemy, heroes)}: data unavailable{suffix}")
+        else:
+            lines.append(f"  vs {_display(enemy, heroes)}: {score:+.1f} [{source}]")
     for ally, score in item.breakdown.synergy_contributions:
-        if score:
-            lines.append(f"  with {_display(ally, heroes)}: {score:+.1f} [{dict(item.breakdown.synergy_sources).get(ally, 'manual')}]")
+        source = dict(item.breakdown.synergy_sources).get(ally, "unavailable")
+        if source.startswith("unavailable"):
+            suffix = " for selected role" if source == "unavailable-role" else ""
+            lines.append(f"  with {_display(ally, heroes)}: data unavailable{suffix}")
+        else:
+            lines.append(f"  with {_display(ally, heroes)}: {score:+.1f} [{source}]")
     lines.append(f"  total: {item.breakdown.total:.1f}")
     return "\n".join(lines)
 

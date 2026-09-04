@@ -96,3 +96,68 @@ def test_stats_components_replace_manual_values_without_double_counting(monkeypa
     result = scoring.recommend(Draft(("bane",), ("chen",), "carry"), data="stats")[0]
     assert result.breakdown.base == 2
     assert (result.breakdown.matchups, result.breakdown.synergies) == pytest.approx((3 * 100000 / 101000, 4 * 100000 / 101000))
+
+
+@pytest.mark.parametrize(("role", "label"), [
+    ("carry", "Position 1"), ("mid", "Position 2"),
+    ("offlane", "Position 3"), ("support", "Position 4"),
+    ("hard_support", "Position 5"),
+])
+def test_stats_snapshot_role_mapping_and_breakdown_label(monkeypatch, role, label):
+    hero = Hero("candidate", "Candidate", (role,), 50, {role: 10})
+    scoring._local_data.cache_clear()
+    monkeypatch.setattr(scoring, "load_data", lambda: ({"candidate": hero}, {}, {}))
+    monkeypatch.setattr(scoring, "_stats", lambda: ({}, {"candidate": (2.0, 500, 1000, .5)}, {}, {}, role))
+    result = scoring.recommend(Draft((), (), role), data="stats")[0]
+    assert result.breakdown.base == 2.0
+    assert result.breakdown.base_source == f"stratz-{role}"
+    assert result.breakdown.position_label == label
+    assert result.breakdown.pos1_matches == 500
+
+
+def test_wrong_role_snapshot_does_not_supply_position_one_meta_or_pair_evidence(monkeypatch):
+    heroes = {
+        "candidate": Hero("candidate", "Candidate", ("offlane",), 50, {"offlane": 10}),
+        "enemy": Hero("enemy", "Enemy", ("carry",), 50, {"carry": 10}),
+    }
+    scoring._local_data.cache_clear()
+    monkeypatch.setattr(scoring, "load_data", lambda: (heroes, {"candidate": {"enemy": 8}}, {}))
+    monkeypatch.setattr(scoring, "_stats", lambda: ({"candidate": .2}, {"candidate": (9.0, 900, 1000, .9)}, {"candidate": {"enemy": 6}}, {}, "carry"))
+    result = scoring.recommend(Draft(("enemy",), (), "offlane"), data="hybrid")[0]
+    assert result.breakdown.base == .2
+    assert result.breakdown.base_source == "opendota-fallback"
+    assert result.breakdown.position_label == "Position 3"
+    assert result.breakdown.pos1_matches == 0
+    assert result.breakdown.position_confidence == 0
+    assert result.breakdown.matchup_contributions[0][1] == 0
+    assert result.breakdown.matchup_sources[0] == ("enemy", "unavailable-role")
+
+
+def test_unavailable_matchup_is_explicit_in_explanation(monkeypatch):
+    heroes = {
+        "candidate": Hero("candidate", "Candidate", ("offlane",), 50, {"offlane": 10}),
+        "enemy": Hero("enemy", "Enemy", ("carry",), 50, {"carry": 10}),
+    }
+    scoring._local_data.cache_clear()
+    monkeypatch.setattr(scoring, "load_data", lambda: (heroes, {}, {}))
+    monkeypatch.setattr(scoring, "_stats", lambda: ({"candidate": .2}, {}, {}, {}, "carry"))
+    result = scoring.recommend(Draft(("enemy",), (), "offlane"), data="stats")[0]
+    explanation = format_explanation(result, heroes)
+    assert "Position 3 sample" in explanation
+    assert "Position 1 sample" not in explanation
+    assert "vs Enemy: data unavailable for selected role" in explanation
+
+
+def test_available_matchup_evidence_is_identified_separately_from_meta(monkeypatch):
+    heroes = {
+        "candidate": Hero("candidate", "Candidate", ("offlane",), 50, {"offlane": 10}),
+        "enemy": Hero("enemy", "Enemy", ("carry",), 50, {"carry": 10}),
+    }
+    scoring._local_data.cache_clear()
+    monkeypatch.setattr(scoring, "load_data", lambda: (heroes, {}, {}))
+    monkeypatch.setattr(scoring, "_stats", lambda: ({"candidate": .2}, {"candidate": (1.0, 1000, 1000, 1.0)}, {"candidate": {"enemy": 3.0}}, {}, "offlane"))
+    result = scoring.recommend(Draft(("enemy",), (), "offlane"), data="stats")[0]
+    explanation = format_explanation(result, heroes)
+    assert result.breakdown.base_source == "stratz-offlane"
+    assert result.breakdown.matchup_sources == (("enemy", "stratz"),)
+    assert "vs Enemy: +1.5 [stratz]" in explanation

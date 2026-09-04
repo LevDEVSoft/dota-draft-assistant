@@ -31,6 +31,7 @@ class ScoreBreakdown:
     synergy_sources: tuple[tuple[str, str], ...] = ()
     pos1_matches: int = 0
     position_confidence: float = 0.0
+    position_label: str = "Position 1"
 
     @property
     def matchups(self) -> float:
