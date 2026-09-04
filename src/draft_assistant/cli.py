@@ -6,7 +6,7 @@ from .aliases import build_aliases
 from .data_sources.dotabuff import DotabuffError
 from .data_sources.opendota import OpenDotaError
 from .data_sources.stratz import StratzError
-from .heroes import load_data, parse_draft
+from .heroes import DATA_DIR, load_data, parse_draft
 from .validation import validate_aliases
 from .scoring import recommend
 from .item_knowledge import ITEMS
@@ -55,6 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--window", choices=("week", "month", "year"), default="month", help="DOTABUFF time window (default: month)")
     parser.add_argument("--profile-status", action="store_true", help="show linked Steam profile status")
     parser.add_argument("--profile-probe", action="store_true", help="run the small read-only STRATZ probe for the linked Steam profile")
+    parser.add_argument("--personal-stats", action="store_true", help="fetch and summarize linked personal match history")
+    parser.add_argument("--hero-pool", action="store_true", help="print the linked personal hero pool")
+    parser.add_argument("--matches", type=int, default=100, choices=(25,50,100,250), help="personal history window")
     args = parser.parse_args(argv)
     try:
         heroes, matchups, synergies = load_data()
@@ -85,9 +88,18 @@ def main(argv: list[str] | None = None) -> int:
             probe = probe_player_access(profile.steam_id64)
             print(f"SteamID64: {profile.steam_id64}\nSTRATZ player account ID: {probe.steam_account_id}\nPlayer resolved: {'YES' if probe.player_available else 'NO'}\nMatch query accepted: {'YES' if probe.match_query_accepted else 'NO'}\nMatch nodes returned: {probe.visible_match_count}\nAggregate match count: {probe.total_match_count}\nExplicit privacy/permission error: {'YES' if probe.explicit_privacy_error else 'NO'}\nPrivate-history access: {probe.private_history_access}" + (f"\nCause: {probe.reason}" if probe.reason else ""))
             return 0
+        if args.personal_stats or args.hero_pool:
+            from .profile.profile_state import default_store
+            from .personal_history import analyze_pool, fetch_history, save_cache
+            profile=default_store().load()
+            if not profile: raise ValueError("No linked Steam profile")
+            history=fetch_history(profile.steam_id64, DATA_DIR / "hero_id_map.json", args.matches)
+            save_cache(DATA_DIR / "generated" / "personal_history.json", history); pool=analyze_pool(history)
+            print(f"PERSONAL HERO POOL — LAST {args.matches} MATCHES\nVisible standard matches: {pool['matches']}\nRole distribution: {pool['role_distribution']}\nUnknown roles: {pool['unknown_roles']}")
+            for row in pool["heroes"][:15]: print(f"{row['hero_id']:<22} {row['games']:>3} games {row['winrate']:.1%} {row['tier'] or ''}")
+            return 0
         if args.sync_stats:
             from .data_sources.stratz import build_sync_plan, sync
-            from .heroes import DATA_DIR
             plan = build_sync_plan(args.stats_role, heroes, DATA_DIR / "hero_id_map.json")
             print(f"Sync plan:\nRole: {plan.role}\nMeta requests: {plan.meta_requests}\nPair candidates: {len(plan.pair_hero_ids)}\nExpected API requests: {plan.expected_requests}")
             snapshot = sync(args.stats_role, DATA_DIR / "generated" / "snapshot.json", heroes, DATA_DIR / "hero_id_map.json")
@@ -95,7 +107,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.sync_dotabuff:
             from .data_sources.dotabuff import role_candidates, sync
-            from .heroes import DATA_DIR
             candidates = role_candidates(args.stats_role, heroes)
             print(f"DOTABUFF sync\nRole: {args.stats_role}\nWindow: {args.window}\nHeroes: {len(candidates)}\nExpected requests: {len(candidates)}")
             snapshot = sync(args.stats_role, args.window, DATA_DIR / "generated" / "dotabuff_snapshot.json", heroes)
@@ -103,7 +114,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.sync_opendota:
             from .data_sources.opendota import sync
-            from .heroes import DATA_DIR
             snapshot = sync(DATA_DIR / "generated" / "opendota_snapshot.json", heroes, DATA_DIR / "hero_id_map.json")
             print(f"Snapshot written: data/generated/opendota_snapshot.json\nHeroes: {len(snapshot['meta'])}\nUnmapped OpenDota hero IDs: {len(snapshot['metadata']['unmapped_hero_ids'])}\nMissing mapped hero IDs: {len(snapshot['metadata']['missing_mapped_hero_ids'])}")
             return 0
