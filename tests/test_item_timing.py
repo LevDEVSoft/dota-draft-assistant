@@ -8,7 +8,7 @@ def setup(gold=1800,minute=22,owned=('phase_boots','armlet')):
 def test_economics_and_timing_are_exact():
  m,p,i=setup(); score=next(x for x in recommend_next_items(m,p,i,20) if x.item_id=='black_king_bar')
  assert score.gold_still_needed==max(0,score.remaining_cost-i.gold)
- assert score.total==score.base+score.matchup+score.team_need+score.role_fit-score.redundancy-score.poor_fit+score.timing
+ assert score.total==score.base+score.matchup+score.team_need+score.role_fit-score.redundancy-score.poor_fit+score.mechanic_fit+score.timing
  assert timing_score(4000,500,8)!=timing_score(4000,5000,45)
 def test_then_is_fresh_and_does_not_mutate_inventory():
  m,p,i=setup(); before=i.owned_items; first=recommend_next_items(m,p,i,3); then=recommend_then_items(m,p,i,3)

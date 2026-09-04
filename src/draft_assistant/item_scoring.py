@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from .item_knowledge import ITEMS, COUNTERS, NEEDS
 from .item_graph import remaining_cost
+from .hero_mechanics import mechanic_fit
 from dataclasses import replace
 
 TIMING_MAX=2.0
@@ -10,9 +11,9 @@ LATE_MINUTE=35
 
 @dataclass(frozen=True)
 class ItemScore:
- item_id:str; base:float; matchup:float; team_need:float; role_fit:float; redundancy:float; poor_fit:float; timing:float; full_cost:int; component_credit:int; remaining_cost:int; gold:int; gold_still_needed:int; reasons:tuple[str,...]
+ item_id:str; base:float; matchup:float; team_need:float; role_fit:float; redundancy:float; poor_fit:float; mechanic_fit:float; timing:float; full_cost:int; component_credit:int; remaining_cost:int; gold:int; gold_still_needed:int; reasons:tuple[str,...]
  @property
- def total(self): return self.base+self.matchup+self.team_need+self.role_fit-self.redundancy-self.poor_fit+self.timing
+ def total(self): return self.base+self.matchup+self.team_need+self.role_fit-self.redundancy-self.poor_fit+self.mechanic_fit+self.timing
 
 def timing_score(remaining,gold,minute):
  """Bounded affordability: gold coverage, with late-game greed tolerance."""
@@ -34,8 +35,9 @@ def score_items(model, profile, inventory):
   poor=1.3 if not fit and spec.category in {"offense","team"} else 0
   redundant=2.0 if spec.item_id in inventory.allied_items and ("team_aura" in spec.tags or "Break" in spec.tags) else 0
   remaining=remaining_cost(spec.item_id,inventory.owned_items); credit=spec.cost-remaining; timing=timing_score(remaining,inventory.gold,inventory.minute)
+  mechanics,overlap,bonus=mechanic_fit(inventory.hero_id,spec)
   reasons=tuple(x for x in (("matchup" if matchup else ""),("team need" if need else ""),("role fit" if fit else ""),("redundant" if redundant else ""),("poor fit" if poor else "")) if x)
-  out.append(ItemScore(spec.item_id,0.0,matchup,need,fit,redundant,poor,timing,spec.cost,credit,remaining,inventory.gold,max(0,remaining-inventory.gold),reasons))
+  out.append(ItemScore(spec.item_id,0.0,matchup,need,fit,redundant,poor,mechanics,timing,spec.cost,credit,remaining,inventory.gold,max(0,remaining-inventory.gold),reasons+(tuple("mechanic overlap" for _ in overlap) if overlap else ("mechanic complement" if bonus else "",))))
  return sorted(out,key=lambda x:(-x.total,x.item_id))
 
 def recommend_next_items(model,profile,inventory,limit=3): return score_items(model,profile,inventory)[:limit]
