@@ -16,6 +16,8 @@ from .autocomplete import HeroAutocomplete
 from .animated_background import AnimatedBackground
 from .state import DraftState
 from .native_hotkey import WindowsHotkey
+from draft_assistant.auth.steam_openid import SteamOpenIDError, login as steam_login
+from draft_assistant.profile.profile_state import default_store
 
 
 class FlowLayout(QLayout):
@@ -95,7 +97,7 @@ def explanation_html(item, heroes):
 
 class Window(QMainWindow):
     def __init__(self):
-        super().__init__(); self.state = DraftState(); self.animations = []; self.autocompleters = {}
+        super().__init__(); self.state = DraftState(); self.animations = []; self.autocompleters = {}; self.profile_store = default_store(); self.profile = self.profile_store.load()
         self.detection_poller = DetectionPoller(parent=self)
         self.detection_poller.result.connect(self.apply_detected_result)
         self.detection_poller.status.connect(lambda message: self.show_status(message))
@@ -160,7 +162,9 @@ class Window(QMainWindow):
         self.pin = QCheckBox("Always on top"); self.overlay_toggle = QCheckBox("Overlay")
         for label, control in (("ROLE", self.role), ("MODE", self.mode), ("SHOW", self.count)):
             group = QVBoxLayout(); group.setSpacing(2); caption = QLabel(label); caption.setObjectName("controlLabel"); group.addWidget(caption); group.addWidget(control); controls.addLayout(group)
-        controls.addWidget(self.pin); controls.addWidget(self.overlay_toggle); row.addWidget(strip); return row
+        controls.addWidget(self.pin); controls.addWidget(self.overlay_toggle)
+        self.profile_button = QPushButton("Sign out Steam" if self.profile else "Sign in with Steam"); self.profile_button.setObjectName("quietButton"); self.profile_button.clicked.connect(self.sign_in_steam)
+        controls.addWidget(self.profile_button); row.addWidget(strip); return row
 
     def team_section(self, parent, title, side):
         panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(13, 9, 13, 10); box.setSpacing(6)
@@ -283,6 +287,17 @@ class Window(QMainWindow):
     def activate_overlay(self):
         self.showNormal(); self.show(); self.raise_(); self.activateWindow()
         (self.enemy if not self.enemy.text() else self.ally).setFocus()
+
+    def sign_in_steam(self):
+        if self.profile:
+            self.profile_store.sign_out(); self.profile = None; self.profile_button.setText("Sign in with Steam"); self.show_status("Steam profile unlinked."); return
+        try:
+            self.show_status("Complete Steam sign-in in your default browser.")
+            self.profile = self.profile_store.save(steam_login().steam_id64)
+            self.profile_button.setText("Sign out Steam")
+            self.show_status("Steam account linked. Use steam-login for access diagnostics.")
+        except SteamOpenIDError as error:
+            self.show_status(str(error), error=True)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape and self.compact_overlay:

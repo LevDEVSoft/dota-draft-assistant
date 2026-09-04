@@ -1,0 +1,1 @@
+"""External-browser authentication adapters."""

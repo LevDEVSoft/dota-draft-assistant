@@ -53,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sync-dotabuff", action="store_true", help="fetch a local DOTABUFF counter snapshot")
     parser.add_argument("--sync-opendota", action="store_true", help="fetch a local OpenDota Herald/Guardian meta snapshot")
     parser.add_argument("--window", choices=("week", "month", "year"), default="month", help="DOTABUFF time window (default: month)")
+    parser.add_argument("--profile-status", action="store_true", help="show linked Steam profile status")
     args = parser.parse_args(argv)
     try:
         heroes, matchups, synergies = load_data()
@@ -61,6 +62,19 @@ def main(argv: list[str] | None = None) -> int:
         item_aliases=build_item_aliases(); edges=validate_graph()
         if args.validate_data:
             print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}\nItems: {len(ITEMS)}\nRecommendable items: {sum(x.recommendable for x in ITEMS.values())}\nItem aliases: {len(item_aliases)}\nUpgrade edges: {len(edges)}\nMatchups: {sum(len(values) for values in matchups.values())}\nSynergies: {len(synergies)}")
+            return 0
+        if args.draft == "steam-login":
+            from .auth.steam_openid import login
+            from .profile.profile_state import default_store
+            from .data_sources.stratz import probe_player_access
+            profile = default_store().save(login().steam_id64)
+            probe = probe_player_access(profile.steam_id64)
+            print(f"Steam connected: {profile.steam_id64}\nSTRATZ player: {'available' if probe.player_available else 'unavailable'}\nRecent matches: {'available' if probe.recent_matches_available else 'unavailable'}\nVisible recent match count: {probe.visible_match_count}\nPrivate-history access: {probe.private_history_access}" + (f"\nReason: {probe.reason}" if probe.reason else ""))
+            return 0
+        if args.profile_status:
+            from .profile.profile_state import default_store
+            profile = default_store().load()
+            print(f"Steam profile: {profile.steam_id64 if profile else 'not connected'}")
             return 0
         if args.sync_stats:
             from .data_sources.stratz import build_sync_plan, sync

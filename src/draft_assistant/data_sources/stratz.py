@@ -40,6 +40,36 @@ class StratzRateLimitError(StratzError):
 
 
 @dataclass(frozen=True)
+class PlayerAccessProbe:
+    player_available: bool
+    recent_matches_available: bool
+    visible_match_count: int
+    private_history_access: str
+    reason: str | None = None
+
+
+def probe_player_access(steam_id64: str) -> PlayerAccessProbe:
+    """Read at most five matches; this never prints or persists the API token."""
+    try:
+        account_id = int(steam_id64) - 76561197960265728
+        if account_id <= 0: raise ValueError
+    except (TypeError, ValueError):
+        return PlayerAccessProbe(False, False, 0, "UNKNOWN", "invalid SteamID64")
+    query = """query PlayerProbe($id:Long!) { player(steamAccountId:$id) { steamAccountId matchCount lastMatchDate matches(request:{take:5}) { id startDateTime durationSeconds isStats } } }"""
+    try:
+        player = execute(query, {"id": account_id}).get("player")
+    except StratzError as error:
+        return PlayerAccessProbe(False, False, 0, "UNKNOWN", str(error).replace(token() if os.environ.get("STRATZ_API_TOKEN") else "", "[redacted]"))
+    if not player:
+        return PlayerAccessProbe(False, False, 0, "UNKNOWN", "player unavailable")
+    matches = player.get("matches")
+    if matches is None:
+        return PlayerAccessProbe(True, False, 0, "UNKNOWN", "recent matches unavailable or private")
+    count = len(matches)
+    return PlayerAccessProbe(True, True, count, "YES" if count else "UNKNOWN", None if count else "no recent matches visible")
+
+
+@dataclass(frozen=True)
 class SyncPlan:
     role: str
     pair_hero_ids: tuple[int, ...]
