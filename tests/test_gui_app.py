@@ -11,12 +11,17 @@ from draft_assistant.gui.app import Window
 from draft_assistant.gui.animated_background import AnimatedBackground
 from draft_assistant.gui.autocomplete import ranked_suggestions
 from draft_assistant.gui.state import DraftState
+import draft_assistant.scoring as scoring
 from draft_assistant.screen_detection.detector import DetectionResult, SlotDetection
 
 
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
+
+@pytest.fixture(autouse=True)
+def clear_scoring_cache():
+    scoring._local_data.cache_clear()
 
 
 def add(window, value, side):

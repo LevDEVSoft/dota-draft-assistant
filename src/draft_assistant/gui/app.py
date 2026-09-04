@@ -120,7 +120,7 @@ class Window(QMainWindow):
         self.main_splitter.addWidget(self.detail_tabs); self.main_splitter.setSizes([590, 390]); layout.addWidget(self.main_splitter, 1)
         layout.addLayout(self.actions())
         self.status = QLabel(); self.status.setObjectName("status"); self.status.setMinimumHeight(20); layout.addWidget(self.status)
-        self.role.currentTextChanged.connect(self.refresh); self.mode.currentTextChanged.connect(self.refresh); self.count.currentTextChanged.connect(self.refresh)
+        self.role.currentTextChanged.connect(self.refresh); self.mode.currentTextChanged.connect(self.refresh); self.pool.currentTextChanged.connect(self.refresh); self.count.currentTextChanged.connect(self.refresh)
         self.pin.toggled.connect(self.set_always_on_top); self.clear_button.clicked.connect(self.clear_draft)
         self.save_button.clicked.connect(lambda: self.show_status("Draft saving is not configured yet."))
         self.explain_button.clicked.connect(self.show_explain); self.recs.itemSelectionChanged.connect(self.update_explanation)
@@ -158,9 +158,10 @@ class Window(QMainWindow):
         strip = QFrame(); strip.setObjectName("controlStrip"); controls = QHBoxLayout(strip); controls.setContentsMargins(10, 6, 10, 6); controls.setSpacing(8)
         self.role = QComboBox(); self.role.addItems(["carry", "mid", "offlane", "support", "hard_support"])
         self.mode = QComboBox(); self.mode.addItems(["manual", "stats", "hybrid"]); self.mode.setCurrentText("hybrid")
+        self.pool = QComboBox(); self.pool.addItems(["all", "prefer", "only"])
         self.count = QComboBox(); self.count.addItems(["3", "5", "10"]); self.count.setCurrentText("5")
         self.pin = QCheckBox("Always on top"); self.overlay_toggle = QCheckBox("Overlay")
-        for label, control in (("ROLE", self.role), ("MODE", self.mode), ("SHOW", self.count)):
+        for label, control in (("ROLE", self.role), ("MODE", self.mode), ("HEROES", self.pool), ("SHOW", self.count)):
             group = QVBoxLayout(); group.setSpacing(2); caption = QLabel(label); caption.setObjectName("controlLabel"); group.addWidget(caption); group.addWidget(control); controls.addLayout(group)
         controls.addWidget(self.pin); controls.addWidget(self.overlay_toggle)
         self.profile_button = QPushButton("Sign out Steam" if self.profile else "Sign in with Steam"); self.profile_button.setObjectName("quietButton"); self.profile_button.clicked.connect(self.sign_in_steam)
@@ -321,7 +322,7 @@ class Window(QMainWindow):
         self.show_status(f"Dota detected · {count} picks" if count else "Waiting for draft screen")
     def refresh(self, rebuild=True):
         selected_id = self.current[self.recs.currentRow()].hero.id if hasattr(self, "current") and 0 <= self.recs.currentRow() < len(self.current) else None
-        self.state.role, self.state.mode, self.state.top = self.role.currentText(), self.mode.currentText(), int(self.count.currentText())
+        self.state.role, self.state.mode, self.state.pool_mode, self.state.top = self.role.currentText(), self.mode.currentText(), self.pool.currentText(), int(self.count.currentText())
         self.current = self.state.recommendations(); self.recs.clear()
         for rank, recommendation in enumerate(self.current, 1):
             item = QListWidgetItem(); item.setSizeHint(QSize(0, 40)); self.recs.addItem(item); self.recs.setItemWidget(item, RecommendationCard(rank, recommendation))

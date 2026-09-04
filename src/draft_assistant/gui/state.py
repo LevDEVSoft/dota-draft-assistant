@@ -11,7 +11,7 @@ from draft_assistant.item_knowledge import ITEMS
 class DraftState:
     def __init__(self):
         self.heroes = load_data()[0]; self.aliases = build_aliases(self.heroes)
-        self.enemies=[]; self.allies=[]; self.detected_enemies=[]; self.detected_allies=[]; self.suppressed_detected=set(); self.role="carry"; self.mode="hybrid"; self.top=5; self.selected=None
+        self.enemies=[]; self.allies=[]; self.detected_enemies=[]; self.detected_allies=[]; self.suppressed_detected=set(); self.role="carry"; self.mode="hybrid"; self.pool_mode="all"; self.top=5; self.selected=None
         self.role_assignments=(); self.analysis=None
         self.selected_player=None; self.inventories={}
     def add(self, value, side):
@@ -63,6 +63,6 @@ class DraftState:
         return score_items(self.analysis,profile,InventoryState(self.selected_player,assignment.position,tuple(self.inventories.get(self.selected_player,[])),allied))
     def clear(self): self.enemies.clear(); self.allies.clear(); self.selected=None; self.role_assignments=(); self.analysis=None; self.selected_player=None; self.inventories={}
     def draft(self): return Draft(self.side_heroes("enemy"), self.side_heroes("ally"), self.role)
-    def recommendations(self): return recommend(self.draft(),self.top,self.mode)
+    def recommendations(self): return recommend(self.draft(),self.top,self.mode,self.pool_mode)
     def suggestions(self, text):
         key=text.casefold(); return [h.display_name for h in self.heroes.values() if key in h.display_name.casefold()][:8]

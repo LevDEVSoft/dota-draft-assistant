@@ -32,6 +32,9 @@ class ScoreBreakdown:
     pos1_matches: int = 0
     position_confidence: float = 0.0
     position_label: str = "Position 1"
+    personal_comfort: float = 0.0
+    personal_tier: str | None = None
+    personal_games: int = 0
 
     @property
     def matchups(self) -> float:
@@ -43,7 +46,7 @@ class ScoreBreakdown:
 
     @property
     def total(self) -> float:
-        return self.base + self.role + self.matchups + self.synergies
+        return self.base + self.role + self.matchups + self.synergies + self.personal_comfort
 
 
 @dataclass(frozen=True)

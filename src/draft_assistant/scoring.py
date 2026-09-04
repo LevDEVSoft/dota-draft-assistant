@@ -5,6 +5,7 @@ from functools import lru_cache
 
 from .heroes import DATA_DIR, load_data
 from .models import Draft, Recommendation, ScoreBreakdown
+from .personal_history import analyze_role_pools, load_cache
 
 # Centralized weights: 1.0 preserves hand-authored JSON ranking-point values.
 BASE_WEIGHT = ROLE_WEIGHT = MATCHUP_WEIGHT = SYNERGY_WEIGHT = 1.0
@@ -18,6 +19,11 @@ ROLE_POSITION_LABELS = {
     "support": "Position 4",
     "hard_support": "Position 5",
 }
+PERSONAL_COMFORT = {"MAIN": .6, "COMFORTABLE": .35, "PLAYED": .15}
+
+@lru_cache(maxsize=1)
+def _personal_pools():
+    return analyze_role_pools(load_cache(DATA_DIR / "generated" / "personal_history.json"))
 
 
 def matchup_score(candidate: str, enemy: str, matchups: dict[str, dict[str, float]]) -> float:
@@ -49,11 +55,13 @@ def _stats() -> tuple[dict, dict, dict, dict, str | None]:
     return meta, pos_meta, matchups, synergies, snapshot_role
 
 
-def recommend(draft: Draft, limit: int = 3, data: str = "manual") -> list[Recommendation]:
+def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str = "all") -> list[Recommendation]:
     """Score valid heroes from the data-defined rating, matchups, synergies, and role score."""
     heroes, matchups, synergies = _local_data()
     if data not in {"manual", "stats", "hybrid"}:
         raise ValueError("data must be manual, stats, or hybrid")
+    if pool_mode not in {"all", "prefer", "only"}: raise ValueError("pool_mode must be all, prefer, or only")
+    pool_rows={row["hero_id"]:row for row in _personal_pools().get(draft.role,{}).get("heroes",[])} if pool_mode != "all" else {}
     loaded_stats = _stats() if data in {"stats", "hybrid"} else ({}, {}, {}, {}, None)
     # Keep small test fixtures written before snapshot metadata was introduced
     # usable, while real on-disk snapshots must explicitly match the role.
@@ -69,6 +77,8 @@ def recommend(draft: Draft, limit: int = 3, data: str = "manual") -> list[Recomm
     for hero in heroes.values():
         if draft.role not in hero.roles or hero.id in picks:
             continue
+        personal=pool_rows.get(hero.id, {}); tier=personal.get("tier")
+        if pool_mode == "only" and not tier: continue
         use_manual = data in {"manual", "hybrid"}
         position = pos_meta.get(hero.id, (None, 0, 0, 0)) if role_stats else (None, 0, 0, 0)
         if len(position) == 2:
@@ -115,6 +125,7 @@ def recommend(draft: Draft, limit: int = 3, data: str = "manual") -> list[Recomm
             if curated:
                 matchups_for_hero = (*matchups_for_hero, ("curated adjustment", total))
                 matchup_sources = (*matchup_sources, ("curated adjustment", "manual-curated"))
-        breakdown = ScoreBreakdown((pos_score if pos_score is not None else meta_stats.get(hero.id, hero.base_rating if use_manual else 0)) * BASE_WEIGHT, 0.0, matchups_for_hero, synergies_for_hero, f"stratz-{draft.role}" if pos_score is not None else ("opendota-fallback" if hero.id in meta_stats else ("hero-data" if use_manual else "missing")), "eligibility", matchup_sources, synergy_sources, pos_matches, confidence, position_label)
+        comfort=PERSONAL_COMFORT.get(tier,0.0) if pool_mode == "prefer" else 0.0
+        breakdown = ScoreBreakdown((pos_score if pos_score is not None else meta_stats.get(hero.id, hero.base_rating if use_manual else 0)) * BASE_WEIGHT, 0.0, matchups_for_hero, synergies_for_hero, f"stratz-{draft.role}" if pos_score is not None else ("opendota-fallback" if hero.id in meta_stats else ("hero-data" if use_manual else "missing")), "eligibility", matchup_sources, synergy_sources, pos_matches, confidence, position_label, comfort, tier, personal.get("games",0))
         results.append(Recommendation(hero, breakdown))
     return sorted(results, key=lambda item: (-item.score, item.hero.display_name))[:limit]

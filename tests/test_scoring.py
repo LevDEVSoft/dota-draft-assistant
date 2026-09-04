@@ -87,6 +87,17 @@ def test_breakdown_total_is_exact_scoring_formula():
     assert breakdown.total == breakdown.base + breakdown.role + sum(value for _, value in breakdown.matchup_contributions) + sum(value for _, value in breakdown.synergy_contributions)
     assert item.score == breakdown.total
 
+def test_personal_pool_modes_are_role_specific_and_bounded(monkeypatch):
+    heroes={"axe":Hero("axe","Axe",("carry",),1,{}),"bane":Hero("bane","Bane",("carry",),1,{})}
+    scoring._local_data.cache_clear(); monkeypatch.setattr(scoring,"load_data",lambda:(heroes,{},{}))
+    monkeypatch.setattr(scoring,"_personal_pools",lambda:{"carry":{"heroes":[{"hero_id":"axe","tier":"MAIN","games":4}]},"support":{"heroes":[{"hero_id":"bane","tier":"MAIN","games":9}]}})
+    draft=Draft((),(),"carry")
+    all_rows=scoring.recommend(draft,2,"manual","all"); preferred=scoring.recommend(draft,2,"manual","prefer"); only=scoring.recommend(draft,2,"manual","only")
+    assert all_rows[0].score == 1
+    axe=next(row for row in preferred if row.hero.id=="axe")
+    assert axe.breakdown.personal_comfort == .6 and axe.score == 1.6
+    assert [row.hero.id for row in only] == ["axe"]
+
 
 def test_stats_components_replace_manual_values_without_double_counting(monkeypatch):
     heroes = {"axe": Hero("axe", "Axe", ("carry",), 50, {"carry": 10}), "bane": Hero("bane", "Bane", ("support",), 50, {"support": 10}), "chen": Hero("chen", "Chen", ("support",), 50, {"support": 10})}
