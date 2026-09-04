@@ -16,6 +16,7 @@ from .mapping import load_mapping, validate_mapping
 ENDPOINT = "https://api.stratz.com/graphql"
 ROLE_POSITIONS = {"carry": "POSITION_1", "mid": "POSITION_2", "offlane": "POSITION_3", "support": "POSITION_4", "hard_support": "POSITION_5"}
 DEFAULT_BRACKET = "HERALD_GUARDIAN"
+BRACKET_LABELS = {"HERALD_GUARDIAN": "Herald / Guardian"}
 DEFAULT_PAIR_DELAY_SECONDS = 0.30
 
 
@@ -76,12 +77,13 @@ def probe_player_access(steam_id64: str) -> PlayerAccessProbe:
 
 @dataclass(frozen=True)
 class SyncPlan:
-    role: str
     pair_hero_ids: tuple[int, ...]
+    role: str = "all"
 
     @property
     def meta_requests(self) -> int:
-        return 1
+        # One unfiltered total plus one batched query for each Dota position.
+        return 1 + len(ROLE_POSITIONS)
 
     @property
     def expected_requests(self) -> int:
@@ -144,13 +146,13 @@ def fetch_pairs(hero_id: int, bracket: str = DEFAULT_BRACKET) -> dict:
     return rows[0] if rows else {"with": [], "vs": []}
 
 
-def build_sync_plan(role: str, heroes: dict, mapping_path: Path) -> SyncPlan:
-    if role not in ROLE_POSITIONS:
-        raise StratzError(f"Unknown role: {role}")
+def build_sync_plan(heroes: dict, mapping_path: Path) -> SyncPlan:
+    """Plan one shared pair pass and batched meta for every supported role."""
     mapping = load_mapping(mapping_path)
     validate_mapping(mapping, set(heroes))
-    allowed = {hero_id for hero_id, hero in heroes.items() if role in hero.roles}
-    return SyncPlan(role, tuple(sorted(external_id for external_id, hero_id in mapping.items() if hero_id in allowed)))
+    # matchUp is position-agnostic, so a single request for every mapped hero is
+    # reusable by all five role datasets.
+    return SyncPlan(pair_hero_ids=tuple(sorted(mapping)))
 
 
 def _other_hero(row: dict, source_id: int) -> int | None:
@@ -165,20 +167,24 @@ def _source_wins(row: dict, source_id: int) -> int:
     return row["winCount"] if row["heroId1"] == source_id else row["matchCount"] - row["winCount"]
 
 
-def sync(role: str, output: Path, heroes: dict, mapping_path: Path, bracket: str = DEFAULT_BRACKET, pair_delay: float = DEFAULT_PAIR_DELAY_SECONDS, sleeper: Callable[[float], None] = sleep) -> dict:
-    """Fetch one role-specific snapshot, pacing pair requests below STRATZ limits."""
-    plan = build_sync_plan(role, heroes, mapping_path)
+def sync(output: Path, heroes: dict, mapping_path: Path, bracket: str = DEFAULT_BRACKET, pair_delay: float = DEFAULT_PAIR_DELAY_SECONDS, sleeper: Callable[[float], None] = sleep) -> dict:
+    """Fetch all role meta plus one shared, paced global pair dataset."""
+    if bracket not in BRACKET_LABELS: raise StratzError(f"Unsupported bracket: {bracket}")
+    plan = build_sync_plan(heroes, mapping_path)
     mapping = load_mapping(mapping_path)
     ids = sorted(mapping)
     canonical_heroes = set(heroes)
-    raw = {"metadata": {"provider": "stratz", "generated_at": datetime.now(UTC).isoformat(), "bracket": bracket, "role": role}, "meta": [], "matchups": [], "synergies": []}
-    all_position = {}
+    raw = {"metadata": {"provider": "stratz", "generated_at": datetime.now(UTC).isoformat(), "bracket": bracket, "roles": list(ROLE_POSITIONS)}, "meta": [], "matchups": [], "synergies": []}
+    all_position, role_meta = {}, {role: [] for role in ROLE_POSITIONS}
     for row in fetch_meta(ids, None, bracket):
-        if row.get("heroId") in mapping: all_position[row["heroId"]] = all_position.get(row["heroId"], 0) + row["matchCount"]
-    for row in fetch_meta(list(plan.pair_hero_ids), role, bracket):
         if row.get("heroId") in mapping:
-            all_matches = all_position.get(row["heroId"], 0); pos_matches = row["matchCount"]
-            raw["meta"].append({"hero_id": row["heroId"], "role": role, "matches": pos_matches, "wins": row["winCount"], "all_position_matches": all_matches, "position_share": min(1, pos_matches / all_matches) if all_matches else 0, "sample_confidence": pos_matches / (pos_matches + 1000)})
+            all_position[row["heroId"]] = all_position.get(row["heroId"], 0) + row["matchCount"]
+            raw["meta"].append({"hero_id": row["heroId"], "matches": row["matchCount"], "wins": row["winCount"]})
+    for role in ROLE_POSITIONS:
+        for row in fetch_meta(ids, role, bracket):
+            if row.get("heroId") in mapping:
+                all_matches, matches = all_position.get(row["heroId"], 0), row["matchCount"]
+                role_meta[role].append({"hero_id": row["heroId"], "role": role, "matches": matches, "wins": row["winCount"], "all_position_matches": all_matches, "position_share": min(1, matches / all_matches) if all_matches else 0, "sample_confidence": matches / (matches + 1000)})
     seen_synergies = set()
     for index, source_id in enumerate(plan.pair_hero_ids):
         if index and pair_delay > 0:
@@ -194,11 +200,19 @@ def sync(role: str, output: Path, heroes: dict, mapping_path: Path, bracket: str
             if pair and pair not in seen_synergies:
                 seen_synergies.add(pair)
                 raw["synergies"].append({"hero_id": source_id, "ally_id": target_id, "matches": row["matchCount"], "wins": row["winCount"]})
-    snapshot = normalize_snapshot(raw, mapping, canonical_heroes)
-    by_external = {row["hero_id"]: row for row in raw["meta"]}
-    for row in snapshot["meta"]:
-        extra = by_external.get(next(key for key, value in mapping.items() if value == row["hero_id"]), {})
-        row.update({key: extra.get(key, 0) for key in ("all_position_matches", "position_share", "sample_confidence")})
+    # Pair ratings use the unfiltered baseline; position relevance is applied by
+    # the runtime using the selected role's metadata.
+    normalized_pairs = normalize_snapshot(raw, mapping, canonical_heroes)
+    roles = {}
+    for role, records in role_meta.items():
+        normalized = normalize_snapshot({"meta": records}, mapping, canonical_heroes)["meta"]
+        by_external = {record["hero_id"]: record for record in records}
+        for record in normalized:
+            external_id = next(key for key, value in mapping.items() if value == record["hero_id"])
+            extra = by_external[external_id]
+            record.update({key: extra[key] for key in ("all_position_matches", "position_share", "sample_confidence")})
+        roles[role] = {"meta": normalized}
+    snapshot = {"metadata": {"provider":"stratz", "generated_at":raw["metadata"]["generated_at"], "default_bracket":bracket}, "brackets": {bracket: {"roles": roles, "pairs": {"matchups": normalized_pairs["matchups"], "synergies": normalized_pairs["synergies"]}}}}
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return snapshot

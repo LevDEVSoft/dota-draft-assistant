@@ -50,7 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--heroes", choices=("all", "prefer", "only"), default="all", help="all heroes, prefer personal pool, or personal pool only")
     parser.add_argument("--validate-data", action="store_true", help="validate local data files")
     parser.add_argument("--sync-stats", action="store_true", help="fetch a local STRATZ snapshot")
-    parser.add_argument("--stats-role", choices=("carry", "mid", "offlane", "support", "hard_support"), default="carry", help="role-specific STRATZ statistics (default: carry)")
+    parser.add_argument("--bracket", choices=("HERALD_GUARDIAN",), default="HERALD_GUARDIAN", help="STRATZ rank bracket")
+    parser.add_argument("--stats-role", choices=("carry", "mid", "offlane", "support", "hard_support"), help="deprecated; STRATZ sync always captures all roles")
     parser.add_argument("--sync-dotabuff", action="store_true", help="fetch a local DOTABUFF counter snapshot")
     parser.add_argument("--sync-opendota", action="store_true", help="fetch a local OpenDota Herald/Guardian meta snapshot")
     parser.add_argument("--window", choices=("week", "month", "year"), default="month", help="DOTABUFF time window (default: month)")
@@ -101,10 +102,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.sync_stats:
             from .data_sources.stratz import build_sync_plan, sync
-            plan = build_sync_plan(args.stats_role, heroes, DATA_DIR / "hero_id_map.json")
-            print(f"Sync plan:\nRole: {plan.role}\nMeta requests: {plan.meta_requests}\nPair candidates: {len(plan.pair_hero_ids)}\nExpected API requests: {plan.expected_requests}")
-            snapshot = sync(args.stats_role, DATA_DIR / "generated" / "snapshot.json", heroes, DATA_DIR / "hero_id_map.json")
-            print(f"Snapshot written: data/generated/snapshot.json\nHeroes: {len(snapshot['meta'])}\nMatchups: {len(snapshot['matchups'])}\nSynergies: {len(snapshot['synergies'])}")
+            plan = build_sync_plan(heroes, DATA_DIR / "hero_id_map.json")
+            print(f"Sync plan:\nBracket: {args.bracket}\nRoles: all\nMeta requests: {plan.meta_requests}\nPair candidates: {len(plan.pair_hero_ids)}\nExpected API requests: {plan.expected_requests}")
+            snapshot = sync(DATA_DIR / "generated" / "snapshot.json", heroes, DATA_DIR / "hero_id_map.json", args.bracket)
+            role_counts = ", ".join(f"{role}={len(values['meta'])}" for role, values in snapshot["brackets"][args.bracket]["roles"].items())
+            pairs = snapshot["brackets"][args.bracket]["pairs"]
+            print(f"Snapshot written: data/generated/snapshot.json\nRole hero counts: {role_counts}\nMatchups: {len(pairs['matchups'])}\nSynergies: {len(pairs['synergies'])}")
             return 0
         if args.sync_dotabuff:
             from .data_sources.dotabuff import role_candidates, sync
@@ -120,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not args.draft or args.top < 1:
             parser.error("Provide a draft and a positive --top value")
-        choices = recommend(parse_draft(args.draft, heroes), args.top, args.data, args.heroes)
+        choices = recommend(parse_draft(args.draft, heroes), args.top, args.data, args.heroes, args.bracket)
     except (DotabuffError, OpenDotaError, StratzError, ValueError) as error:
         parser.error(str(error))
     if not choices:

@@ -172,3 +172,22 @@ def test_available_matchup_evidence_is_identified_separately_from_meta(monkeypat
     assert result.breakdown.base_source == "stratz-offlane"
     assert result.breakdown.matchup_sources == (("enemy", "stratz"),)
     assert "vs Enemy: +1.5 [stratz]" in explanation
+
+
+@pytest.mark.parametrize(("role", "expected_score"), [
+    ("carry", 1.0), ("mid", 2.0), ("offlane", 3.0),
+    ("support", 4.0), ("hard_support", 5.0),
+])
+def test_role_indexed_snapshot_selects_only_requested_role(monkeypatch, role, expected_score):
+    hero = Hero("candidate", "Candidate", (role,), 50, {role: 10})
+    role_meta = {
+        name: {"candidate": (score, 2000, 4000, .5)}
+        for score, name in enumerate(("carry", "mid", "offlane", "support", "hard_support"), 1)
+    }
+    scoring._local_data.cache_clear()
+    monkeypatch.setattr(scoring, "load_data", lambda: ({"candidate": hero}, {}, {}))
+    monkeypatch.setattr(scoring, "_stats", lambda: ({}, role_meta, {}, {}, None))
+    result = scoring.recommend(Draft((), (), role), data="stats")[0]
+    assert result.breakdown.base == expected_score
+    assert result.breakdown.base_source == f"stratz-{role}"
+    assert result.breakdown.position_confidence == pytest.approx(2 / 3 * .5)

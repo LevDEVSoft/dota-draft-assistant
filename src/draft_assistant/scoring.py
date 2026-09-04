@@ -41,36 +41,60 @@ def synergy_score(first: str, second: str, synergies: dict[tuple[str, str], floa
     return synergies.get(tuple(sorted((first, second))), 0.0)
 
 @lru_cache(maxsize=1)
-def _stats() -> tuple[dict, dict, dict, dict, str | None]:
+def _stats(bracket: str = "HERALD_GUARDIAN") -> tuple[dict, dict, dict, dict, str | None]:
     """Load optional local snapshots; generated data never triggers network access."""
     open_path, stratz_path = DATA_DIR / "generated" / "opendota_snapshot.json", DATA_DIR / "generated" / "snapshot.json"
-    meta, pos_meta, matchups, synergies, snapshot_role = {}, {}, {}, {}, None
+    meta, role_meta, matchups, synergies, snapshot_role = {}, {}, {}, {}, None
     if open_path.exists():
         data = json.loads(open_path.read_text(encoding="utf-8")); meta = {row["hero_id"]: row["score"] for row in data.get("meta", [])}
     if stratz_path.exists():
-        data = json.loads(stratz_path.read_text(encoding="utf-8")); snapshot_role=data.get("metadata",{}).get("role")
-        pos_meta = {row["hero_id"]: (row["score"], row["matches"], row.get("all_position_matches", 0), row.get("position_share", 0)) for row in data.get("meta", [])}
-        for row in data.get("matchups", []): matchups.setdefault(row["hero_id"], {})[row["opponent_id"]] = row["score"]
-        synergies = {tuple(row["heroes"]): row["score"] for row in data.get("synergies", [])}
-    return meta, pos_meta, matchups, synergies, snapshot_role
+        data = json.loads(stratz_path.read_text(encoding="utf-8"))
+        if "brackets" in data:
+            selected=data["brackets"].get(bracket)
+            if selected:
+                role_meta = {role: {row["hero_id"]: (row["score"], row["matches"], row.get("all_position_matches",0), row.get("position_share",0)) for row in values.get("meta",[])} for role,values in selected["roles"].items()}
+                for row in selected["pairs"].get("matchups",[]): matchups.setdefault(row["hero_id"],{})[row["opponent_id"]]=row["score"]
+                synergies={tuple(row["heroes"]):row["score"] for row in selected["pairs"].get("synergies",[])}
+        elif "roles" in data:
+            role_meta = {
+                role: {row["hero_id"]: (row["score"], row["matches"], row.get("all_position_matches", 0), row.get("position_share", 0)) for row in values.get("meta", [])}
+                for role, values in data["roles"].items()
+            }
+            pairs = data.get("pairs", {})
+            for row in pairs.get("matchups", []): matchups.setdefault(row["hero_id"], {})[row["opponent_id"]] = row["score"]
+            synergies = {tuple(row["heroes"]): row["score"] for row in pairs.get("synergies", [])}
+        else:
+            # Legacy carry-only snapshots remain readable until refreshed.
+            snapshot_role = data.get("metadata", {}).get("role")
+            role_meta = {snapshot_role: {row["hero_id"]: (row["score"], row["matches"], row.get("all_position_matches", 0), row.get("position_share", 0)) for row in data.get("meta", [])}} if snapshot_role else {}
+            for row in data.get("matchups", []): matchups.setdefault(row["hero_id"], {})[row["opponent_id"]] = row["score"]
+            synergies = {tuple(row["heroes"]): row["score"] for row in data.get("synergies", [])}
+    return meta, role_meta, matchups, synergies, snapshot_role
 
 
-def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str = "all") -> list[Recommendation]:
+def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str = "all", bracket: str = "HERALD_GUARDIAN") -> list[Recommendation]:
     """Score valid heroes from the data-defined rating, matchups, synergies, and role score."""
     heroes, matchups, synergies = _local_data()
     if data not in {"manual", "stats", "hybrid"}:
         raise ValueError("data must be manual, stats, or hybrid")
     if pool_mode not in {"all", "prefer", "only"}: raise ValueError("pool_mode must be all, prefer, or only")
     pool_rows={row["hero_id"]:row for row in _personal_pools().get(draft.role,{}).get("heroes",[])} if pool_mode != "all" else {}
-    loaded_stats = _stats() if data in {"stats", "hybrid"} else ({}, {}, {}, {}, None)
+    if data in {"stats", "hybrid"}:
+        try: loaded_stats = _stats(bracket)
+        except TypeError: loaded_stats = _stats()  # legacy test fixtures
+    else: loaded_stats = ({}, {}, {}, {}, None)
     # Keep small test fixtures written before snapshot metadata was introduced
     # usable, while real on-disk snapshots must explicitly match the role.
     if len(loaded_stats) == 4:
-        meta_stats, pos_meta, matchup_stats, synergy_stats = loaded_stats
+        meta_stats, role_meta, matchup_stats, synergy_stats = loaded_stats
         snapshot_role = draft.role
     else:
-        meta_stats, pos_meta, matchup_stats, synergy_stats, snapshot_role = loaded_stats
-    role_stats = snapshot_role == draft.role
+        meta_stats, role_meta, matchup_stats, synergy_stats, snapshot_role = loaded_stats
+    if role_meta and all(isinstance(value, tuple) for value in role_meta.values()):
+        # Compatibility with pre-role-indexed in-memory test fixtures.
+        role_meta = {snapshot_role or draft.role: role_meta}
+    pos_meta = role_meta.get(draft.role, {})
+    role_stats = bool(pos_meta) or snapshot_role == draft.role
     position_label = ROLE_POSITION_LABELS[draft.role]
     picks = set(draft.enemies + draft.allies)
     results = []
@@ -80,7 +104,8 @@ def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str
         personal=pool_rows.get(hero.id, {}); tier=personal.get("tier")
         if pool_mode == "only" and not tier: continue
         use_manual = data in {"manual", "hybrid"}
-        position = pos_meta.get(hero.id, (None, 0, 0, 0)) if role_stats else (None, 0, 0, 0)
+        hero_role_stats = role_stats and hero.id in pos_meta
+        position = pos_meta.get(hero.id, (None, 0, 0, 0)) if hero_role_stats else (None, 0, 0, 0)
         if len(position) == 2:
             pos_score, pos_matches = position
             all_matches, share = 0, 1.0
@@ -90,11 +115,11 @@ def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str
         # the snapshot has the selected role's relevance metadata.
         confidence = (
             pos_matches / (pos_matches + 1000) * share
-            if role_stats
+            if hero_role_stats
             else (1.0 if data == "manual" else 0.0)
         )
         def matchup_source(enemy: str) -> str:
-            if not role_stats and data in {"stats", "hybrid"}:
+            if not hero_role_stats and data in {"stats", "hybrid"}:
                 return "unavailable-role"
             if enemy in matchup_stats.get(hero.id, {}):
                 return "stratz"
@@ -102,7 +127,7 @@ def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str
                 return "manual"
             return "unavailable"
         def synergy_source(ally: str) -> str:
-            if not role_stats and data in {"stats", "hybrid"}:
+            if not hero_role_stats and data in {"stats", "hybrid"}:
                 return "unavailable-role"
             if tuple(sorted((hero.id, ally))) in synergy_stats:
                 return "stratz"
