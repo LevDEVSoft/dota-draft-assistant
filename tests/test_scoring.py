@@ -98,6 +98,15 @@ def test_personal_pool_modes_are_role_specific_and_bounded(monkeypatch):
     assert axe.breakdown.personal_comfort == .6 and axe.score == 1.6
     assert [row.hero.id for row in only] == ["axe"]
 
+def test_two_worlds_share_scores_but_not_candidate_sets(monkeypatch):
+    heroes={"axe":Hero("axe","Axe",("carry",),1,{}),"bane":Hero("bane","Bane",("carry",),2,{})}
+    scoring._local_data.cache_clear(); monkeypatch.setattr(scoring,"load_data",lambda:(heroes,{},{}))
+    monkeypatch.setattr(scoring,"_personal_pools",lambda:{"carry":{"heroes":[{"hero_id":"axe","tier":"MAIN","games":4}]}})
+    meta,pool=scoring.recommend_worlds(Draft((),(),"carry"),2,"manual")
+    assert [x.hero.id for x in meta] == ["bane","axe"]
+    assert [x.hero.id for x in pool] == ["axe"]
+    assert pool[0].score == next(x.score for x in meta if x.hero.id=="axe")
+
 
 def test_stats_components_replace_manual_values_without_double_counting(monkeypatch):
     heroes = {"axe": Hero("axe", "Axe", ("carry",), 50, {"carry": 10}), "bane": Hero("bane", "Bane", ("support",), 50, {"support": 10}), "chen": Hero("chen", "Chen", ("support",), 50, {"support": 10})}

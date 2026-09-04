@@ -154,3 +154,10 @@ def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str
         breakdown = ScoreBreakdown((pos_score if pos_score is not None else meta_stats.get(hero.id, hero.base_rating if use_manual else 0)) * BASE_WEIGHT, 0.0, matchups_for_hero, synergies_for_hero, f"stratz-{draft.role}" if pos_score is not None else ("opendota-fallback" if hero.id in meta_stats else ("hero-data" if use_manual else "missing")), "eligibility", matchup_sources, synergy_sources, pos_matches, confidence, position_label, comfort, tier, personal.get("games",0))
         results.append(Recommendation(hero, breakdown))
     return sorted(results, key=lambda item: (-item.score, item.hero.display_name))[:limit]
+
+def recommend_worlds(draft: Draft, limit: int = 5, data: str = "manual", bracket: str = "HERALD_GUARDIAN") -> tuple[list[Recommendation], list[Recommendation]]:
+    """Two independent candidate sets sharing exactly the same draft score."""
+    meta = recommend(draft, 127, data, "all", bracket)
+    pool_ids = {row["hero_id"] for row in _personal_pools().get(draft.role, {}).get("heroes", []) if row.get("tier")}
+    pool = [item for item in meta if item.hero.id in pool_ids]
+    return meta[:limit], pool[:limit]

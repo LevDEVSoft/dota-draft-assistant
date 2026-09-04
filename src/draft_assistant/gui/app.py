@@ -15,6 +15,7 @@ from draft_assistant.item_knowledge import ITEMS
 from .autocomplete import HeroAutocomplete
 from .animated_background import AnimatedBackground
 from .state import DraftState
+from draft_assistant.scoring import recommend_worlds
 from .native_hotkey import WindowsHotkey
 from draft_assistant.auth.steam_openid import SteamOpenIDError, login as steam_login
 from draft_assistant.profile.profile_state import default_store
@@ -183,7 +184,10 @@ class Window(QMainWindow):
     def recommendations_panel(self):
         panel = QFrame(); panel.setObjectName("recommendationPanel"); box = QVBoxLayout(panel); box.setContentsMargins(14, 11, 14, 12); box.setSpacing(5)
         heading = QHBoxLayout(); title = QLabel("RECOMMENDATIONS"); title.setObjectName("sectionTitle"); note = QLabel("Best available picks"); note.setObjectName("appSubtitle"); heading.addWidget(title); heading.addStretch(1); heading.addWidget(note); box.addLayout(heading)
-        self.recs = QListWidget(); self.recs.setMinimumHeight(180); self.recs.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded); self.recs.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff); box.addWidget(self.recs); return panel
+        lists=QHBoxLayout(); left=QVBoxLayout(); right=QVBoxLayout(); left.addWidget(QLabel("META / ALL HEROES")); right.addWidget(QLabel("MY POOL"))
+        self.recs = QListWidget(); self.pool_recs = QListWidget()
+        for widget in (self.recs,self.pool_recs): widget.setMinimumHeight(180); widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded); widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        left.addWidget(self.recs); right.addWidget(self.pool_recs); lists.addLayout(left,1); lists.addLayout(right,1); box.addLayout(lists); return panel
 
     def role_plan_panel(self):
         panel = QFrame(); panel.setObjectName("panel"); box = QVBoxLayout(panel); box.setContentsMargins(13, 9, 13, 10); box.setSpacing(5)
@@ -323,9 +327,12 @@ class Window(QMainWindow):
     def refresh(self, rebuild=True):
         selected_id = self.current[self.recs.currentRow()].hero.id if hasattr(self, "current") and 0 <= self.recs.currentRow() < len(self.current) else None
         self.state.role, self.state.mode, self.state.pool_mode, self.state.top = self.role.currentText(), self.mode.currentText(), self.pool.currentText(), int(self.count.currentText())
-        self.current = self.state.recommendations(); self.recs.clear()
+        self.current, self.pool_current = recommend_worlds(self.state.draft(), self.state.top, self.state.mode); self.recs.clear(); self.pool_recs.clear()
         for rank, recommendation in enumerate(self.current, 1):
             item = QListWidgetItem(); item.setSizeHint(QSize(0, 40)); self.recs.addItem(item); self.recs.setItemWidget(item, RecommendationCard(rank, recommendation))
+        meta_ranks={item.hero.id:index for index,item in enumerate(self.current,1)}
+        for rank,recommendation in enumerate(self.pool_current,1):
+            item=QListWidgetItem(); item.setSizeHint(QSize(0,40)); self.pool_recs.addItem(item); self.pool_recs.setItemWidget(item, RecommendationCard(rank,recommendation))
         if rebuild: self.rebuild_chips()
         self.refresh_role_plan()
         selected_row = next((index for index, item in enumerate(self.current) if item.hero.id == selected_id), 0)
