@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
 from draft_assistant.aliases import normalize_hero
 from draft_assistant.screen_detection import DetectionPoller, TemporalStabilizer
 from draft_assistant.item_knowledge import ITEMS
+from draft_assistant.statistics import confidence_label, hero_statistics, matchup_statistics
 from .autocomplete import HeroAutocomplete
 from .animated_background import AnimatedBackground
 from .state import DraftState
@@ -86,6 +87,15 @@ def explanation_html(item, heroes):
         source = synergy_sources.get(ally, "unavailable")
         detail = "data unavailable" + (" for selected role" if source == "unavailable-role" else "") if source.startswith("unavailable") else f"{score:+.1f} · {source}"
         synergies.append(f"<li><b>with {html.escape(heroes.get(ally).display_name if ally in heroes else ally.title())}</b><span>{html.escape(detail)}</span></li>")
+    role = {"Position 1": "carry", "Position 2": "mid", "Position 3": "offlane", "Position 4": "support", "Position 5": "hard_support"}.get(breakdown.position_label, "carry")
+    hero_stats = hero_statistics(item.hero.id, role)
+    stat_lines = []
+    if hero_stats:
+        stat_lines.append(f"<li><b>{html.escape(hero_stats.bracket.replace('_', ' / '))} · {html.escape(role.replace('_', ' ').upper())}</b><span>{hero_stats.win_rate:.1%} WR · {hero_stats.matches:,} matches" + (f" · {hero_stats.pick_rate:.1%} pick" if hero_stats.pick_rate is not None else "") + "</span></li>")
+    for enemy, _ in breakdown.matchup_contributions:
+        matchup = matchup_statistics(item.hero.id, enemy, role)
+        if matchup:
+            stat_lines.append(f"<li><b>vs {html.escape(heroes.get(enemy).display_name if enemy in heroes else enemy.title())}</b><span>{matchup.win_rate:.1%} WR · Δ {matchup.delta:+.1%} · {matchup.matches:,}</span></li>")
     return f"""
     <style>body{{font-family:'Segoe UI';font-size:10pt;color:#d7e1ef;margin:0}}h2{{color:#f4f7fc;margin:0;font-size:13pt}}.score{{color:#aacdff;font-size:13pt;font-weight:700;float:right}}.summary{{color:#9fb0c8;margin:5px 0 8px}}.pill{{background:#263a55;color:#cde0fa;border-radius:8px;padding:3px 7px;margin-right:5px}}h3{{color:#91add4;font-size:8pt;letter-spacing:1px;margin:10px 0 3px}}ul{{margin:0;padding-left:15px}}li{{margin:2px 0}}li span{{color:#91a7c4;float:right}}</style>
     <h2>{html.escape(item.hero.display_name)} <span class='score'>{item.score:+.1f}</span></h2>
@@ -93,6 +103,7 @@ def explanation_html(item, heroes):
     <div class='summary'>{html.escape(breakdown.position_label)} sample: {breakdown.pos1_matches:,} · confidence: {breakdown.position_confidence:.3f} · total: <b>{breakdown.total:+.1f}</b></div>
     {"<h3>MATCHUPS</h3><ul>" + "".join(reasons) + "</ul>" if reasons else ""}
     {"<h3>SYNERGY</h3><ul>" + "".join(synergies) + "</ul>" if synergies else ""}
+    {"<h3>STATISTICS</h3><ul>" + "".join(stat_lines) + "</ul>" if stat_lines else ""}
     """
 
 
@@ -384,7 +395,16 @@ class Window(QMainWindow):
     def show_item_detail(self):
         item=self.item_list.currentItem()
         if item:
-            score=item.data(Qt.ItemDataRole.UserRole); self.item_detail.setText(" · ".join((f"Matchup {score.matchup:+.1f}",f"Need {score.team_need:+.1f}",f"Role fit {score.role_fit:+.1f}",f"Redundancy {-score.redundancy:+.1f}",f"Poor fit {-score.poor_fit:+.1f}")))
+            score=item.data(Qt.ItemDataRole.UserRole)
+            mechanics=" · ".join((f"Matchup {score.matchup:+.1f}",f"Need {score.team_need:+.1f}",f"Role fit {score.role_fit:+.1f}",f"Redundancy {-score.redundancy:+.1f}",f"Poor fit {-score.poor_fit:+.1f}"))
+            stats=score.statistics
+            if not stats:
+                detail="Statistics:\nNo role/bracket item sample"
+            else:
+                timing=f"\nTiming: {stats.timing_bucket}" if stats.timing_bucket else ""
+                purchase_rate=f"\nPurchase rate: {stats.purchase_rate:.1%}" if stats.purchase_rate is not None else ""
+                detail=(f"STATISTICS\n{stats.bracket.replace('_', ' / ')} · {stats.role.replace('_', ' ').upper()}\nPurchased: {stats.purchases:,} matches" + purchase_rate + f"\nWin rate: {stats.win_rate:.1%}\nHero baseline: {stats.baseline_win_rate:.1%}\nDelta: {stats.delta:+.1%}\nConfidence: {confidence_label(stats.purchases)}" + timing)
+            self.item_detail.setText(mechanics+"\n\n"+detail)
     def toggle_explanation(self):
         self.detail_tabs.setVisible(not self.detail_tabs.isVisible())
         if self.detail_tabs.isVisible(): self.show_explain()
