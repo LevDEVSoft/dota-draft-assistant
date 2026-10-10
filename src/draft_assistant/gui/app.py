@@ -263,15 +263,19 @@ class Window(QMainWindow):
             for hero_id in hero_ids: self.add_chip(hero_id, side)
 
     def remove_hero(self, hero_id, side, chip):
+        self.state.remove(hero_id); self.show_status(""); self.refresh(False)
         self.animate_chip(chip, False, lambda: self.finish_removal(hero_id, side, chip))
 
     def finish_removal(self, hero_id, side, chip):
         layout = self.enemy_chips if side == "enemy" else self.ally_chips
         for index in range(layout.count()):
             if layout.itemAt(index).widget() is chip: layout.takeAt(index); break
-        chip.deleteLater(); self.state.remove(hero_id); self.show_status(""); self.refresh(False)
+        chip.deleteLater()
 
     def animate_chip(self, chip, entering, finished=None):
+        # An unfinished entrance must not delete the removal's opacity effect.
+        for animation in getattr(chip, "draft_animations", ()):
+            animation.stop(); self.animations.remove(animation)
         effect = QGraphicsOpacityEffect(chip); chip.setGraphicsEffect(effect); width = chip.sizeHint().width()
         fade = QPropertyAnimation(effect, b"opacity", chip); grow = QPropertyAnimation(chip, b"maximumWidth", chip)
         for animation in (fade, grow): animation.setDuration(150); animation.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -282,6 +286,7 @@ class Window(QMainWindow):
             chip.setGraphicsEffect(None)
             if entering: chip.setMaximumWidth(16777215)
             if finished: finished()
+        chip.draft_animations = (fade, grow)
         fade.finished.connect(done); self.animations.extend((fade, grow)); fade.start(); grow.start()
 
     def set_always_on_top(self, enabled):

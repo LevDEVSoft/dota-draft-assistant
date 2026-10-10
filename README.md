@@ -1,55 +1,68 @@
 # Dota Draft Assistant
 
-A small, local command-line Dota 2 draft assistant. Enter partial drafts and your intended role to get the three highest-scoring legal picks. This MVP uses manual text input only: no screen recognition, web app, external API, or LLM.
+Local Dota 2 draft recommendations through a CLI and a PySide6 desktop GUI. Manual drafting runs offline; optional provider refreshes create local statistical snapshots. Scores are ranking points, not win probabilities.
 
-## Setup
+## Windows setup and launch
 
-Requires Python 3.12 or later.
-
-```powershell
-py -3.12 -m pip install -e .
-py -3.12 -m pytest
-```
-
-## Usage
+Requires 64-bit Python 3.12 or later. Run these PowerShell commands from the checkout. The version pins below reproduce the dependencies used in the audit; newer versions have not been tested here.
 
 ```powershell
-dota-pick "sf bara ogre silencer | underlord jakiro wd | carry"
-dota-pick "sf bara ogre silencer | underlord jakiro wd | carry" --explain
-dota-pick "sf bara ogre | jakiro wd | carry" --top 5
-dota-pick --validate-data
+Set-Location C:\Users\lev\projects\dota-draft-assistant
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e . "PySide6==6.11.2" "pytest==9.1.1"
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+.\.venv\Scripts\dota-pick.exe --validate-data
+.\.venv\Scripts\dota-pick-gui.exe
 ```
 
-Example output:
+Activation is unnecessary. Keep the checkout's `data` directory: the current loader resolves data relative to the source tree, so editable installation is the supported path. A standalone wheel installation outside the checkout is not verified.
 
-```text
-1. Lifestealer   93.0
-2. Juggernaut    86.0
-3. Wraith King   78.0
+Alternative GUI launch after installation:
+
+```powershell
+.\.venv\Scripts\python.exe -m draft_assistant.gui.app
 ```
 
-Input uses `enemy heroes | allied heroes | role`. Hero names and aliases are case-insensitive; `sf`, `bara`, `wd`, and Russian `сф` work. Supported roles are `carry`, `mid`, `offlane`, `support`, and `hard_support`.
+## Manual drafting
 
-## Scoring
-
-Each legal candidate receives:
-
-```text
-base + role suitability + matchup contributions + synergy contributions
+```powershell
+.\.venv\Scripts\dota-pick.exe "sf bara ogre silencer | underlord jakiro wd | carry" --explain
+.\.venv\Scripts\dota-pick.exe "sf bara ogre | jakiro wd | carry" --top 5 --data manual
 ```
 
-Scores are arbitrary ranking points, not percentages, normalized values, or win probabilities. Positive matchups favor the candidate against that enemy; negative ones penalize it. Synergies are stored once per unordered pair and always apply equally in either direction. Current values are manually seeded MVP data, not statistically validated game data.
+Input is `enemy heroes | allied heroes | role`. Hero names and aliases are case-insensitive; multiword names and Russian aliases are supported. Roles: `carry`, `mid`, `offlane`, `support`, `hard_support`. Picked heroes are excluded from recommendations.
 
-## Project structure
+The GUI offers autocomplete, pick chips, role/count/data selectors, separate meta and personal-pool lists, score explanations, allied role overrides, team timing/threat analysis, item suggestions and owned-item tracking. It also has a compact overlay, always-on-top and an animation toggle. Draft saving is a placeholder. Screen detection requires programmatic calibration and portrait references; selecting AUTO alone does not configure it.
 
-```text
-src/draft_assistant/  CLI, parsing, models, and deterministic scoring
-data/                 hero definitions, matchups, and synergies
-tests/                pytest coverage for MVP behavior
+## Optional data refresh and personal pool
+
+```powershell
+.\.venv\Scripts\dota-pick.exe --sync-opendota
+# Set STRATZ_API_TOKEN in this shell using your own token before these commands.
+.\.venv\Scripts\dota-pick.exe --sync-stats
+.\.venv\Scripts\dota-pick.exe steam-login
+.\.venv\Scripts\dota-pick.exe --profile-status
+.\.venv\Scripts\dota-pick.exe --profile-probe
+.\.venv\Scripts\dota-pick.exe --personal-stats --matches 100
+.\.venv\Scripts\dota-pick.exe "sf | wd | carry" --data hybrid --heroes prefer
 ```
 
-## Statistical ingestion foundation
+STRATZ sync captures all five roles for Herald/Guardian, with six meta requests and 127 paced pair requests. `--stats-role` does not restrict STRATZ sync. OpenDota supplies a public, position-agnostic Herald/Guardian fallback. `manual`, `stats`, and `hybrid` read local data without fetching during recommendation. Restart the GUI after refreshing snapshots because readers cache them in memory.
 
-Runtime recommendations continue to use the local manual seed data and never need network access. Future provider adapters belong under `data_sources/`; the included offline importer turns raw JSON plus `data/hero_id_map.json` into a clearly separate generated snapshot. Synthetic fixtures are tests only, not game data.
+Steam sign-in links an identity through a browser and local OpenID callback; it does not grant access to private match history. Personal history needs a STRATZ token and accessible provider data. Pool modes are `all`, `prefer`, and `only`; an empty role pool can produce no results in `only` mode. GUI sign-in does not automatically refresh history.
 
-`data/hero_id_map.json` contains the complete 127-hero Valve numeric-ID mapping, transcribed from SteamDatabase's Valve GameTracking-Dota2 [`npc_heroes.txt`](https://github.com/SteamDatabase/GameTracking-Dota2/blob/master/game/dota/pak01_dir/scripts/npc/npc_heroes.txt) constants. `dota-pick --sync-stats` is an explicit refresh command; it requires `STRATZ_API_TOKEN`, prints its bounded request plan, and writes `data/generated/snapshot.json`. It defaults to carry and accepts `--stats-role` for another supported role.
+DOTABUFF has an HTML importer (`--sync-dotabuff --stats-role carry --window month`), but the audit received HTTP 403, and its snapshot is not consumed by runtime scoring.
+
+Generated snapshots live in ignored `data/generated/`. The linked profile lives under `%LOCALAPPDATA%\DotaDraftAssistant`. Keep tokens out of repository files.
+
+## Structure and evidence
+
+- `src/draft_assistant/`: CLI, deterministic scoring, team/item analysis, statistics, personal history, auth, provider adapters, screen detection, Qt GUI.
+- `data/`: 127 hero definitions and numeric-ID mappings, 36 curated directed matchups, 22 synergy pairs, 202 catalog items.
+- `tests/`: parser/data validation, scoring, adapters, personal pools, authentication, detection, GUI, team and item tests.
+- `scripts/`: optional benchmark; `run.sh` is currently empty.
+
+Curated data and mechanics are heuristic; provider coverage and patch freshness are not guarantees of recommendation quality. Raw hero/matchup/item evidence uses a separate optional `statistics.json` export, which current sync commands do not generate.
+
+See [AUDIT.md](AUDIT.md) for verified behavior, remaining limitations and priorities.

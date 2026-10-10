@@ -43,6 +43,9 @@ def test_chip_add_remove_and_cross_team_status(app):
 
     close = window.enemy_chips.itemAt(0).widget().findChild(QToolButton)
     close.click()
+    # Draft legality changes on click, independently of animation/event timing.
+    assert window.state.enemies == []
+    assert "shadow_fiend" not in window.state.draft().enemies
     QTest.qWait(200)
     assert window.state.enemies == []
     assert window.enemy_chips.count() == 0
