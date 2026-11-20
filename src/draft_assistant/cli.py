@@ -46,11 +46,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("draft", nargs="?", help="enemies | allies | role")
     parser.add_argument("--explain", action="store_true", help="show score reasons")
     parser.add_argument("--top", type=int, default=3, help="number of picks to show")
-    parser.add_argument("--data", choices=("manual", "stats", "hybrid"), default="manual", help="manual, generated-only stats, or hybrid local scoring")
+    parser.add_argument("--data", choices=("auto", "manual", "stats", "hybrid"), default="auto", help="manual, generated-only stats, or hybrid local scoring")
     parser.add_argument("--heroes", choices=("all", "prefer", "only"), default="all", help="all heroes, prefer personal pool, or personal pool only")
     parser.add_argument("--validate-data", action="store_true", help="validate local data files")
+    parser.add_argument("--update-meta", action="store_true", help="refresh current-patch exact-Archon ranked hourly statistics")
     parser.add_argument("--sync-stats", action="store_true", help="fetch a local STRATZ snapshot")
-    parser.add_argument("--bracket", choices=("HERALD_GUARDIAN",), default="HERALD_GUARDIAN", help="STRATZ rank bracket")
+    parser.add_argument("--bracket", choices=("ARCHON", "HERALD_GUARDIAN"), default="ARCHON", help="STRATZ rank bracket")
     parser.add_argument("--stats-role", choices=("carry", "mid", "offlane", "support", "hard_support"), help="deprecated; STRATZ sync always captures all roles")
     parser.add_argument("--sync-dotabuff", action="store_true", help="fetch a local DOTABUFF counter snapshot")
     parser.add_argument("--sync-opendota", action="store_true", help="fetch a local OpenDota Herald/Guardian meta snapshot")
@@ -66,7 +67,21 @@ def main(argv: list[str] | None = None) -> int:
         aliases = build_aliases(heroes)
         validate_aliases(aliases, set(heroes))
         item_aliases=build_item_aliases(); edges=validate_graph()
+        if args.update_meta:
+            from .data_sources.patch_meta import sync
+            snapshot = sync(DATA_DIR / "generated", heroes, DATA_DIR / "hero_id_map.json")
+            print(snapshot["metadata"])
+            return 0
         if args.validate_data:
+            from .data_sources.patch_meta import validate_exports
+            import json
+            patch_path = DATA_DIR / "generated" / "snapshot.json"
+            if patch_path.exists():
+                cached = json.loads(patch_path.read_text(encoding="utf-8"))
+                if cached.get("metadata", {}).get("filter_method"):
+                    print("Patch coverage:", validate_exports(DATA_DIR / "generated", DATA_DIR / "hero_id_map.json"))
+                else:
+                    print("WARNING: cached statistics have no verified patch filter")
             print(f"Data OK\nHeroes: {len(heroes)}\nAliases: {len(aliases)}\nItems: {len(ITEMS)}\nRecommendable items: {sum(x.recommendable for x in ITEMS.values())}\nItem aliases: {len(item_aliases)}\nUpgrade edges: {len(edges)}\nMatchups: {sum(len(values) for values in matchups.values())}\nSynergies: {len(synergies)}")
             return 0
         if args.draft == "steam-login":
@@ -99,6 +114,10 @@ def main(argv: list[str] | None = None) -> int:
             save_cache(DATA_DIR / "generated" / "personal_history.json", history); pool=analyze_pool(history)
             print(f"PERSONAL HERO POOL — LAST {args.matches} MATCHES\nVisible standard matches: {pool['matches']}\nRole distribution: {pool['role_distribution']}\nUnknown roles: {pool['unknown_roles']}")
             for row in pool["heroes"][:15]: print(f"{row['hero_id']:<22} {row['games']:>3} games {row['winrate']:.1%} {row['tier'] or ''}")
+            return 0
+        if args.sync_stats and args.bracket == "ARCHON":
+            from .data_sources.patch_meta import sync
+            print(sync(DATA_DIR / "generated", heroes, DATA_DIR / "hero_id_map.json")["metadata"])
             return 0
         if args.sync_stats:
             from .data_sources.stratz import build_sync_plan, sync

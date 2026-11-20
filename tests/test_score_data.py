@@ -12,7 +12,7 @@ def test_missing_scores_are_neutral_and_synergy_is_symmetric():
 
 
 def test_matchup_sign_changes_total():
-    choices = recommend(parse_draft("sf bara ogre silencer | | carry"), 20)
+    choices = recommend(parse_draft("sf bara ogre silencer | | carry"), 20, data="manual")
     lifestealer = next(choice for choice in choices if choice.hero.id == "lifestealer")
     anti_mage = next(choice for choice in choices if choice.hero.id == "anti_mage")
     assert dict(lifestealer.breakdown.matchup_contributions)["spirit_breaker"] > 0

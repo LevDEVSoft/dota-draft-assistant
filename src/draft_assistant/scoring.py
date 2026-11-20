@@ -40,15 +40,36 @@ def synergy_score(first: str, second: str, synergies: dict[tuple[str, str], floa
     """Synergy pairs are unordered, so lookup is symmetric."""
     return synergies.get(tuple(sorted((first, second))), 0.0)
 
-@lru_cache(maxsize=1)
-def _stats(bracket: str = "HERALD_GUARDIAN") -> tuple[dict, dict, dict, dict, str | None]:
+def _stats(bracket: str = "auto") -> tuple[dict, dict, dict, dict, str | None]:
+    if bracket == "auto":
+        bracket = _read_snapshot(DATA_DIR / "generated" / "snapshot.json").get("metadata", {}).get("default_bracket", "HERALD_GUARDIAN")
+    paths = [DATA_DIR / "generated" / name for name in ("opendota_snapshot.json", "snapshot.json")]
+    signature = []
+    for path in paths:
+        try:
+            stat = path.stat(); signature.append((str(path), stat.st_mtime_ns, stat.st_size))
+        except OSError: signature.append((str(path), None, None))
+    return _load_stats(bracket, tuple(signature))
+
+
+def _read_snapshot(path):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError): return {}
+
+
+@lru_cache(maxsize=2)
+def _load_stats(bracket, signature):
     """Load optional local snapshots; generated data never triggers network access."""
     open_path, stratz_path = DATA_DIR / "generated" / "opendota_snapshot.json", DATA_DIR / "generated" / "snapshot.json"
     meta, role_meta, matchups, synergies, snapshot_role = {}, {}, {}, {}, None
-    if open_path.exists():
-        data = json.loads(open_path.read_text(encoding="utf-8")); meta = {row["hero_id"]: row["score"] for row in data.get("meta", [])}
+    patch_exclusive = False
+    if open_path.exists() and bracket != "ARCHON":
+        data = _read_snapshot(open_path); meta = {row["hero_id"]: row["score"] for row in data.get("meta", [])}
     if stratz_path.exists():
-        data = json.loads(stratz_path.read_text(encoding="utf-8"))
+        data = _read_snapshot(stratz_path)
+        patch_exclusive = bool(data.get("metadata", {}).get("filter_method"))
         if "brackets" in data:
             selected=data["brackets"].get(bracket)
             if selected:
@@ -68,38 +89,50 @@ def _stats(bracket: str = "HERALD_GUARDIAN") -> tuple[dict, dict, dict, dict, st
             snapshot_role = data.get("metadata", {}).get("role")
             role_meta = {snapshot_role: {row["hero_id"]: (row["score"], row["matches"], row.get("all_position_matches", 0), row.get("position_share", 0)) for row in data.get("meta", [])}} if snapshot_role else {}
             for row in data.get("matchups", []): matchups.setdefault(row["hero_id"], {})[row["opponent_id"]] = row["score"]
-            synergies = {tuple(row["heroes"]): row["score"] for row in data.get("synergies", [])}
-    return meta, role_meta, matchups, synergies, snapshot_role
+            synergies = {tuple(sorted(row["heroes"])): row["score"] for row in data.get("synergies", [])}
+    return meta, role_meta, matchups, synergies, snapshot_role, patch_exclusive
 
 
-def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str = "all", bracket: str = "HERALD_GUARDIAN") -> list[Recommendation]:
+_stats.cache_clear = _load_stats.cache_clear
+
+
+def recommend(draft: Draft, limit: int = 3, data: str = "auto", pool_mode: str = "all", bracket: str = "auto") -> list[Recommendation]:
     """Score valid heroes from the data-defined rating, matchups, synergies, and role score."""
     heroes, matchups, synergies = _local_data()
-    if data not in {"manual", "stats", "hybrid"}:
+    if data not in {"auto", "manual", "stats", "hybrid"}:
         raise ValueError("data must be manual, stats, or hybrid")
     if pool_mode not in {"all", "prefer", "only"}: raise ValueError("pool_mode must be all, prefer, or only")
     pool_rows={row["hero_id"]:row for row in _personal_pools().get(draft.role,{}).get("heroes",[])} if pool_mode != "all" else {}
-    if data in {"stats", "hybrid"}:
+    if data in {"auto", "stats", "hybrid"}:
         try: loaded_stats = _stats(bracket)
         except TypeError: loaded_stats = _stats()  # legacy test fixtures
     else: loaded_stats = ({}, {}, {}, {}, None)
     # Keep small test fixtures written before snapshot metadata was introduced
     # usable, while real on-disk snapshots must explicitly match the role.
+    patch_exclusive = loaded_stats[5] if len(loaded_stats) > 5 else False
     if len(loaded_stats) == 4:
         meta_stats, role_meta, matchup_stats, synergy_stats = loaded_stats
         snapshot_role = draft.role
     else:
-        meta_stats, role_meta, matchup_stats, synergy_stats, snapshot_role = loaded_stats
+        meta_stats, role_meta, matchup_stats, synergy_stats, snapshot_role = loaded_stats[:5]
     if role_meta and all(isinstance(value, tuple) for value in role_meta.values()):
         # Compatibility with pre-role-indexed in-memory test fixtures.
         role_meta = {snapshot_role or draft.role: role_meta}
     pos_meta = role_meta.get(draft.role, {})
+    # Manual input and curated-only scoring are separate concerns. Automatic
+    # source selection never mixes 50-point curated bases with provider points.
+    automatic = data == "auto"
+    if patch_exclusive and data == "hybrid": data = "stats"
+    if automatic: data = ("stats" if patch_exclusive else "hybrid") if pos_meta or meta_stats else "manual"
     role_stats = bool(pos_meta) or snapshot_role == draft.role
     position_label = ROLE_POSITION_LABELS[draft.role]
     picks = set(draft.enemies + draft.allies)
     results = []
     for hero in heroes.values():
         if draft.role not in hero.roles or hero.id in picks:
+            continue
+        if (automatic or (data == "stats" and patch_exclusive)) and data != "manual" and hero.id not in pos_meta and hero.id not in meta_stats:
+            # An unknown baseline must not outrank a measured negative score.
             continue
         personal=pool_rows.get(hero.id, {}); tier=personal.get("tier")
         if pool_mode == "only" and not tier: continue
@@ -155,7 +188,19 @@ def recommend(draft: Draft, limit: int = 3, data: str = "manual", pool_mode: str
         results.append(Recommendation(hero, breakdown))
     return sorted(results, key=lambda item: (-item.score, item.hero.display_name))[:limit]
 
-def recommend_worlds(draft: Draft, limit: int = 5, data: str = "manual", bracket: str = "HERALD_GUARDIAN") -> tuple[list[Recommendation], list[Recommendation]]:
+
+def coverage_warning(recommendations):
+    """Unknown pairs are omitted evidence, never measured neutral matchups."""
+    sources = [source for item in recommendations for _, source in
+               item.breakdown.matchup_sources + item.breakdown.synergy_sources]
+    missing = sum(source.startswith("unavailable") for source in sources)
+    if sources and missing == len(sources):
+        return "Draft-aware scoring unavailable for these picks: matchup/synergy data missing or role weight unavailable. Scores reflect base/comfort only."
+    if missing:
+        return f"Incomplete draft evidence: {missing}/{len(sources)} pair contributions unavailable; unknown does not mean neutral."
+    return ""
+
+def recommend_worlds(draft: Draft, limit: int = 5, data: str = "auto", bracket: str = "auto") -> tuple[list[Recommendation], list[Recommendation]]:
     """Two independent candidate sets sharing exactly the same draft score."""
     meta = recommend(draft, 127, data, "all", bracket)
     pool_ids = {row["hero_id"] for row in _personal_pools().get(draft.role, {}).get("heroes", []) if row.get("tier")}

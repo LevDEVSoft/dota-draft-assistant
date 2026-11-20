@@ -1,6 +1,8 @@
 """PySide6 desktop application entry point."""
 import html
 import sys
+from PySide6.QtCore import QProcess
+from .evidence import cache_summary
 
 from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, QSize, Qt
 from PySide6.QtGui import QFont, QKeySequence, QShortcut
@@ -218,7 +220,8 @@ class Window(QMainWindow):
     def explanation(self):
         self.explanation_panel = QFrame(); self.explanation_panel.setObjectName("explanationPanel"); box = QVBoxLayout(self.explanation_panel); box.setContentsMargins(13, 9, 13, 10)
         heading = QLabel("SCORE BREAKDOWN"); heading.setObjectName("sectionTitle"); self.detail = QTextBrowser(); self.detail.setObjectName("explanation"); self.detail.setOpenExternalLinks(False); self.detail.setMinimumHeight(118); self.detail.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        box.addWidget(heading); box.addWidget(self.detail,1); return self.explanation_panel
+        self.evidence_status = QLabel(cache_summary()); self.evidence_status.setWordWrap(True)
+        box.addWidget(heading); box.addWidget(self.evidence_status); box.addWidget(self.detail,1); return self.explanation_panel
 
     def actions(self):
         row = QHBoxLayout(); self.explain_button = QPushButton("Show breakdown"); self.explain_button.setObjectName("primaryButton")
@@ -227,7 +230,27 @@ class Window(QMainWindow):
         self.background_toggle.toggled.connect(self.background.set_animation_enabled)
         self.screen_detection = QComboBox(); self.screen_detection.addItems(["Screen detection: OFF", "Screen detection: AUTO"])
         self.screen_detection.currentIndexChanged.connect(self.set_detection_mode)
+        self.update_meta_button = QPushButton("Update Meta")
+        self.update_meta_button.clicked.connect(self.update_meta)
+        row.addWidget(self.update_meta_button)
         row.addWidget(self.explain_button); row.addStretch(1); row.addWidget(self.screen_detection); row.addWidget(self.background_toggle); row.addWidget(self.clear_button); row.addWidget(self.save_button); self.action_row=row; return row
+
+    def update_meta(self):
+        self.update_meta_button.setEnabled(False)
+        self.show_status("Refreshing current-patch Archon statistics…")
+        self.meta_process = QProcess(self)
+        self.meta_process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.meta_process.finished.connect(self.meta_updated)
+        self.meta_process.errorOccurred.connect(lambda _: self.meta_updated(-1, None))
+        self.meta_process.start(sys.executable, ["-m", "draft_assistant.cli", "--update-meta"])
+
+    def meta_updated(self, exit_code, exit_status):
+        self.update_meta_button.setEnabled(True)
+        from draft_assistant.statistics import _raw
+        _raw.cache_clear()
+        self.refresh()
+        message = "Meta refreshed: Archon ranked, complete post-release hours." if exit_code == 0 else "Meta refresh failed; previous data preserved. Run --update-meta in a terminal for details."
+        self.show_status(message, error=exit_code != 0)
 
     def add_hero(self, input_box, side):
         try: hero_id = self.state.add(input_box.text(), side)
@@ -341,9 +364,10 @@ class Window(QMainWindow):
         count = len(result.allied_picks) + len(result.enemy_picks)
         self.show_status(f"Dota detected · {count} picks" if count else "Waiting for draft screen")
     def refresh(self, rebuild=True):
+        self.evidence_status.setText(cache_summary())
         selected_id = self.current[self.recs.currentRow()].hero.id if hasattr(self, "current") and 0 <= self.recs.currentRow() < len(self.current) else None
         self.state.role, self.state.mode, self.state.pool_mode, self.state.top = self.role.currentText(), self.mode.currentText(), self.pool.currentText(), int(self.count.currentText())
-        self.current, self.pool_current = recommend_worlds(self.state.draft(), self.state.top, self.state.mode); self.recs.clear(); self.pool_recs.clear()
+        self.current, self.pool_current = recommend_worlds(self.state.draft(), self.state.top, "auto" if self.state.mode == "manual" else self.state.mode); self.recs.clear(); self.pool_recs.clear()
         for rank, recommendation in enumerate(self.current, 1):
             item = QListWidgetItem(); item.setSizeHint(QSize(0, 40)); self.recs.addItem(item); self.recs.setItemWidget(item, RecommendationCard(rank, recommendation))
         meta_ranks={item.hero.id:index for index,item in enumerate(self.current,1)}

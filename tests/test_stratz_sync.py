@@ -127,7 +127,7 @@ def test_cli_prints_plan_and_wires_all_role_sync(monkeypatch, capsys):
         captured.update(output=output, heroes=heroes, mapping_path=mapping_path)
         return {"brackets": {bracket: {"roles": {role: {"meta": []} for role in stratz.ROLE_POSITIONS}, "pairs": {"matchups": [], "synergies": []}}}}
     monkeypatch.setattr(stratz, "sync", fake_sync)
-    assert cli.main(["--sync-stats", "--stats-role", "mid"]) == 0
+    assert cli.main(["--sync-stats", "--stats-role", "mid", "--bracket", "HERALD_GUARDIAN"]) == 0
     output = capsys.readouterr().out
     assert "Meta requests: 6" in output and "Pair candidates: 2" in output and "Expected API requests: 8" in output
     assert captured["heroes"] == load_data()[0]

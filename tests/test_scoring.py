@@ -47,7 +47,7 @@ def test_invalid_role_and_malformed_draft_are_rejected(value, message):
 
 
 def test_only_requested_role_is_recommended():
-    choices = recommend(parse_draft(DRAFT))
+    choices = recommend(parse_draft(DRAFT), data="manual")
     assert all("carry" in item.hero.roles for item in choices)
 
 
@@ -57,18 +57,18 @@ def test_existing_draft_heroes_are_not_recommended():
 
 
 def test_scoring_is_deterministic():
-    assert recommend(parse_draft(DRAFT)) == recommend(parse_draft(DRAFT))
+    assert recommend(parse_draft(DRAFT), data="manual") == recommend(parse_draft(DRAFT), data="manual")
 
 
 def test_recommendations_are_ordered():
-    choices = recommend(parse_draft(DRAFT))
+    choices = recommend(parse_draft(DRAFT), data="manual")
     assert [item.hero.id for item in choices] == ["lifestealer", "juggernaut", "wraith_king"]
     assert [item.score for item in choices] == sorted((item.score for item in choices), reverse=True)
 
 
 def test_explanation_contains_breakdown():
     heroes = load_data()[0]
-    explanation = format_explanation(recommend(parse_draft(DRAFT))[0], heroes)
+    explanation = format_explanation(recommend(parse_draft(DRAFT), data="manual")[0], heroes)
     assert "base: +62.0" in explanation
     assert "role: +0.0 [eligibility]" in explanation
     assert "vs Spirit Breaker: +6.0" in explanation
@@ -77,12 +77,12 @@ def test_explanation_contains_breakdown():
 
 def test_explanation_describes_negative_matchup_value():
     heroes = load_data()[0]
-    anti_mage = next(item for item in recommend(parse_draft(DRAFT), limit=20) if item.hero.id == "anti_mage")
+    anti_mage = next(item for item in recommend(parse_draft(DRAFT), limit=20, data="manual") if item.hero.id == "anti_mage")
     assert "vs Silencer: -5.0" in format_explanation(anti_mage, heroes)
 
 
 def test_breakdown_total_is_exact_scoring_formula():
-    item = recommend(parse_draft(DRAFT))[0]
+    item = recommend(parse_draft(DRAFT), data="manual")[0]
     breakdown = item.breakdown
     assert breakdown.total == breakdown.base + breakdown.role + sum(value for _, value in breakdown.matchup_contributions) + sum(value for _, value in breakdown.synergy_contributions)
     assert item.score == breakdown.total

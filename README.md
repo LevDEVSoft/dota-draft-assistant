@@ -2,6 +2,10 @@
 
 Local Dota 2 draft recommendations through a CLI and a PySide6 desktop GUI. Manual drafting runs offline; optional provider refreshes create local statistical snapshots. Scores are ranking points, not win probabilities.
 
+## Current-patch Archon update
+
+Use `.\.venv\Scripts\python.exe -m draft_assistant.cli --update-meta` or **Update Meta** in the GUI. This automatically detects Valve's current patch and refreshes exact-Archon ranked All Pick statistics from complete post-release hourly buckets. See [PATCH_META.md](PATCH_META.md) for verified coverage, limitations, backups and launch commands. The historical provider behavior documented below applies to legacy snapshots; a patch-aware snapshot excludes historical fallback scores.
+
 ## Windows setup and launch
 
 Requires 64-bit Python 3.12 or later. Run these PowerShell commands from the checkout. The version pins below reproduce the dependencies used in the audit; newer versions have not been tested here.

@@ -21,5 +21,5 @@ def test_real_drafts_are_deterministic_and_legal(value):
 
 
 def test_lifestealer_remains_high_for_seeded_case_a():
-    ids = [item.hero.id for item in recommend(parse_draft("sf bara ogre silencer | underlord jakiro wd | carry"))]
+    ids = [item.hero.id for item in recommend(parse_draft("sf bara ogre silencer | underlord jakiro wd | carry"), data="manual")]
     assert "lifestealer" in ids

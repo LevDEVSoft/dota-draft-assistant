@@ -82,35 +82,49 @@ def _record(row: dict, fields: tuple[str, ...]) -> bool:
     return all(field in row and row[field] is not None for field in fields)
 
 
-@lru_cache(maxsize=1)
 def _raw() -> dict:
     path = DATA_DIR / "generated" / "statistics.json"
-    if not path.exists(): return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        stat = path.stat()
+    except OSError:
+        return {}
+    return _read_raw(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+@lru_cache(maxsize=1)
+def _read_raw(filename, modified, size):
+    from pathlib import Path
+    try:
+        data = json.loads(Path(filename).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+_raw.cache_clear = _read_raw.cache_clear
 
 
 def _select(rows, predicate):
     return next((row for row in rows if predicate(row)), None)
 
 
-def hero_statistics(hero_id: str, role: str, bracket: str = "HERALD_GUARDIAN") -> HeroStatistics | None:
+def hero_statistics(hero_id: str, role: str, bracket: str = "auto") -> HeroStatistics | None:
+    if bracket == "auto": bracket = _raw().get("metadata", {}).get("rank_bracket", "HERALD_GUARDIAN")
     row = _select(_raw().get("hero_stats", ()), lambda r: r.get("hero") == hero_id and r.get("role") == role and r.get("bracket") == bracket)
     if not row or not _record(row, ("matches", "wins")): return None
     return HeroStatistics(hero_id, role, bracket, int(row["matches"]), int(row["wins"]), row.get("pick_rate"))
 
 
-def matchup_statistics(hero_id: str, opponent_id: str, role: str, bracket: str = "HERALD_GUARDIAN") -> MatchupStatistics | None:
+def matchup_statistics(hero_id: str, opponent_id: str, role: str, bracket: str = "auto") -> MatchupStatistics | None:
+    if bracket == "auto": bracket = _raw().get("metadata", {}).get("rank_bracket", "HERALD_GUARDIAN")
     row = _select(_raw().get("matchup_stats", ()), lambda r: r.get("hero") == hero_id and r.get("opponent") == opponent_id and r.get("role") == role and r.get("bracket") == bracket)
     baseline = hero_statistics(hero_id, role, bracket)
     if not row or not baseline or not _record(row, ("matches", "wins")): return None
     return MatchupStatistics(hero_id, opponent_id, role, bracket, int(row["matches"]), int(row["wins"]), baseline.win_rate)
 
 
-def item_statistics(hero_id: str, role: str, item_id: str, bracket: str = "HERALD_GUARDIAN") -> ItemStatistics | None:
+def item_statistics(hero_id: str, role: str, item_id: str, bracket: str = "auto") -> ItemStatistics | None:
+    if bracket == "auto": bracket = _raw().get("metadata", {}).get("rank_bracket", "HERALD_GUARDIAN")
     row = _select(_raw().get("item_stats", ()), lambda r: r.get("hero") == hero_id and r.get("role") == role and r.get("bracket") == bracket and r.get("item") == item_id)
     baseline = hero_statistics(hero_id, role, bracket)
     if not row or not baseline or not _record(row, ("purchase_count", "wins")): return None
